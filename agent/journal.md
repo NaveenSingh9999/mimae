@@ -31,3 +31,11 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - readiness: task must have all deps in Done plus no active lease; ready() sorted by TaskId (T4 determinism).
 - claim(): NoSuchAgent, DepsNotMet, StatusNotClaimable, ActiveLease — emits TaskClaimed via EventLog so seq/durability are the log's job.
 - Tests: tests/graph.rs 8 (incl. 50-task barrier-synchronized 2-thread claim stress asserting exactly one owner per task, plus from-log replay equality of full graph state after drop and reopen). tests/team.rs 4. 27/27 total, clippy -D warnings clean, fmt clean.
+
+## Step 3.5 — centralized Coordinator + D16 (5113dea)
+
+- Owner directed: no Redis (P1/D5 local-first stands; EventStore trait keeps a future backend swappable); no "capacity-only" framing — D16 final: late-joining CLI sessions are full members, immediately claim-eligible, and the boot ready-gate never re-engages; head re-decomposes pending work to absorb capacity (step 5).
+- D17 recorded (hierarchical heads): single accountable head; beyond a measured threshold the head spawns sub-planners with scoped sub-graphs; head-to-subplanner communication is typed contracts only (no committee chat — F1/F2/F4); single integrator gate preserved.
+- src/coordinator.rs: Coordinator::open replays log into fresh views; publish() = validate on cloned views THEN append THEN swap (rejected events never touch the log, so replays stay clean); claim() = clone graph, claim, append TaskClaimed, apply to both views, swap. CoreError wraps Log/Fold/Team/Claim.
+- src/team.rs: AgentRegistered re-added as membership append (late joiner becomes member); state recompute still gated on Initializing only.
+- tests/coordinator.rs: 4 (publish flows all three stores; late joiner claimable with no state regression; rejected publish leaves log+views consistent; reopen replays Running state). 31/31 total, clippy -D warnings, fmt clean.

@@ -1,5 +1,6 @@
 # Summary — what happened while you were away
 
+- Phase 0.5 decisions D16 (late join = instant capacity, no re-gate) and D17 (hierarchical heads, no committee chat) recorded.
 ## Done
 - Bootstrapped repo: concept brief imported, agent state, decision log (D1–D14 resolved).
 - Phase 0 decisions recorded with your answers (targets: opencode, Antigravity CLI, Claude Code, Codex CLI, Qwen Code; core-stable-first; gate4agent evaluated first; MIT OR Apache-2.0).
@@ -12,14 +13,16 @@
 
 - **Step 3 complete**: `TaskGraph` fold over `EventStore::stream()` (O(tasks) memory, strict 8.2 transition table, dep-gated readiness, deterministic sorted ready list); atomic `claim()` (NoSuchAgent/DepsNotMet/StatusNotClaimable/ActiveLease errors); `TeamRegistry` driving `initializing → ready → running` from D15; concurrency stress + from-log replay equality covered. 27/27 tests, clippy `-D warnings` clean, fmt clean. Committed `c41a22b`.
 
+- **Step 3.5 complete**: centralized `Coordinator` — the single ingest point owning EventLog + TaskGraph + TeamRegistry. `publish`/`claim` are validate-then-commit (dry-run on cloned views → append → swap), so rejected events never enter the log (replays stay clean). D16 recorded: late-joining CLIs are full members, immediately claim-eligible, boot ready-gate is one-shot. D17 recorded: hierarchical heads (head → sub-planners beyond a measured threshold, typed contracts as the only head-channel, single integrator). 31/31 tests, clippy/fmt clean, commit 5113dea.
+
 ## In progress
-- Nothing — step 3 closed.
+- Nothing — steps 1-3.5 closed.
 
 ## Blocked — needs a decision
 - None blocking. Open (non-blocking): gate4agent evaluation outcome; Antigravity CLI control surface (undocumented in brief — needs research before its adapter); Qwen Code channel verification.
 
 ## Queued next (foundation, in order)
-3. Step 4: leases + heartbeats, expiry self-recovery
+3. Step 4: lease/heartbeat expiry checks surfaced through Coordinator (timer-free, query-time)
 4. Step 5: deterministic coordinator against fake agents (scripted goal end-to-end)
 5. Step 6: fake agent harness (success/fail/hang/crash on cue), crash-reassignment test
 6. Then: gate4agent evaluation → first real adapter (opencode)
