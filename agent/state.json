@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "updated": "2026-10-04",
+  "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
+  "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
+  "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
+  "status": "concept-doc-copied; workspace initialized",
+  "last_actions": [
+    "Copied mimae-concept.md from ~/storage/downloads into repo root",
+    "Initialized git repo and committed concept doc + agent state"
+  ],
+  "open_blockers": [
+    "Section 17 open questions Q1-Q12 are for the owner (Naveen); Q1 (first CLIs), Q2/Q3 (local-first + planner/worker), Q4 (license), Q5 (reuse gate4agent vs own adapters) block Phase 0/1 decisions",
+    "'Nexa' product not identified — need link from owner (Q10)"
+  ],
+  "next_steps": [
+    "Await owner answers to open questions, or proceed with recommendations in Section 17 as defaults (documented in decision log)",
+    "Phase 1: adapter foundation — one CLI over a structured channel with conformance tests",
+    "Create DECISIONS.md decision log per Section 0 rule 5"
+  ]
+}
