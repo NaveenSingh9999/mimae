@@ -26,3 +26,16 @@ Per mimae-concept.md Section 0 rule 5. Every resolved [OPEN] item or changed [PR
 - **Antigravity CLI control surface**: not covered in the brief's Section 10. Needs research (structured mode? ACP?) before its adapter. [OPEN]
 - **Qwen Code channels**: fork of Gemini CLI — verify headless stream-json / ACP status before adapter work. [OPEN]
 - **gate4agent evaluation**: first Phase-1 task; outcome recorded here when done. [OPEN]
+
+## Accepted limitations (recorded 2026-10-04 during review)
+
+- **flock is unix-only**: on Windows the lock stub always returns "acquired" — multi-process safety is unprotected there (matches D7: Linux/macOS first; revisit with Windows support Q12).
+- **`Event.schema_version` is reserved, not yet checked**: a v2 log currently parses only through v1 rules; version gate lands with the first real schema change (flash: Unknown catch-all means new *payloads* are safe, but envelope changes need the check).
+- **Token usage is not yet sorumlulu accounted in the fold**: no emitter exists until the first real adapter (D1 wave) and UsageReported payload lands then; dead schema rejected in favor of late addition (Unknown catch-all makes that forward-safe).
+- **`EventLog::events()` materializes the full log into a Vec**: accepted for clarity; streaming fold path is the one TaskGraph uses. Segmented reading can land with the workspace manager phase if profiles demand it.
+- **Duplicate MessageSent deliveries are not deduplicated in the fold**: coordinator dedupes at send time (step 5); fold keeps events idempotent by event identity only.
+
+## Reviewed & cleared on 2026-10-04
+
+- No `unwrap`/`expect`/`panic!` in src/ (grep-verified); no thread spawns; File handles drop-scoped (no leaks); `#![deny(unsafe_code)]` enforced with a single-scoped `#[allow(unsafe_code)]` on the flock wrapper.
+- File-level resource lifetime check: `EventLog::open` failure paths drop the `File`; `events()` opens/reads/drops per call; `stream()` borrows while yields - all bounded by caller drop.

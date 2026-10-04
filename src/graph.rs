@@ -29,8 +29,8 @@ pub enum FoldError {
         from: TaskStatus,
         to: TaskStatus,
     },
-    #[error("agent {agent_id} state mismatch: expected transition from {from:?}")]
-    AgentStateMismatch { agent_id: AgentId, from: AgentState },
+    #[error("agent {agent_id} is currently in state {actual:?}, event assumed otherwise")]
+    AgentStateMismatch { agent_id: AgentId, actual: AgentState },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -199,7 +199,7 @@ impl TaskGraph {
                 if agent.state != *from {
                     return Err(FoldError::AgentStateMismatch {
                         agent_id: *agent_id,
-                        from: agent.state.clone(),
+                        actual: agent.state.clone(),
                     });
                 }
                 agent.state = to.clone();

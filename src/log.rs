@@ -66,9 +66,11 @@ impl Iterator for EventStream {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.lines.next() {
-                Some(Ok(line)) if line.trim().is_empty() => continue,
                 Some(Ok(line)) => {
                     self.line_no += 1;
+                    if line.trim().is_empty() {
+                        continue;
+                    }
                     return Some(serde_json::from_str::<Event>(&line).map_err(|source| {
                         LogError::Corrupt {
                             line: self.line_no,
