@@ -15,6 +15,11 @@
 - tests/vocab.rs: 8 tests — per-variant round-trip, tag-list consistency, unknown preservation, malformed-known-tag error, wire-format snapshot, body cap, id and actor serde shapes. All pass; clippy -D warnings clean; cargo fmt applied.
 - Next: step 2, append-only event log with crash-safe replay.
 
+## 2026-10-04 — Step 2: event log
+
+- `src/log.rs`: `EventLog::open(path, options)` — append JSON-lines under O_APPEND, flock single-writer (unix, nb), fsync per append (Durability::SyncData default, FlushOnly option). Open scan distinguishes torn tail (truncated silently, recovered) vs corrupt middle line (hard LogError::Corrupt). `EventStore` trait (append/events/high_water_seq/len/is_empty) so storage is swappable (P2). No clock reads in lib — callers pass at_ms.
+- tests/log.rs: 7 tests incl. torn-tail recovery, corrupt-line hard error, second-writer rejection until drop, seq/causes preserved in file order, trait-object usage. All pass; clippy clean; fmt applied. Committed 091522a.
+
 ## Prior art to study before adapters (Section 18)
 
 ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor planner/worker, C-compiler harness, CooperBench, MAST, Orca orchestration.
