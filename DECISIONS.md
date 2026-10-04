@@ -18,9 +18,10 @@ Per mimae-concept.md Section 0 rule 5. Every resolved [OPEN] item or changed [PR
 | D11 | 2026-10-04 | Q6: MCP shim | Optional, off by default (brief recommendation). | Default, unopposed |
 | D12 | 2026-10-04 | Q11: A2A bridge | Later phase, not core (brief recommendation). | Default, unopposed |
 | D13 | 2026-10-04 | Q9: Sandboxing | Worktrees first; containers optional per host. | Default, unopposed |
+| D14 | 2026-10-04 | Step 1 vocabulary shape | Single crate `mimae-core` at repo root (grows into a workspace when adapters land); `Event` uses `seq: u64` as its position/identity in the single-writer log (no separate EventId — YAGNI); `EventPayload::Unknown` catch-all preserves raw JSON so old binaries replay new logs without data loss; message body capped at 2048 bytes via `Message::validate`. | Implementer, recorded for justification |
 
 ## Open items
 
 - **Antigravity CLI control surface**: not covered in the brief's Section 10. Needs research (structured mode? ACP?) before its adapter. [OPEN]
 - **Qwen Code channels**: fork of Gemini CLI — verify headless stream-json / ACP status before adapter work. [OPEN]
-- **gate4agent evaluation**: first Phase-1 task; outcome recorded here as D14 when done. [OPEN]
+- **gate4agent evaluation**: first Phase-1 task; outcome recorded here when done. [OPEN]
