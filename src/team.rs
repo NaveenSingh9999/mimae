@@ -13,7 +13,7 @@ pub enum TeamError {
     NotAMember(AgentId),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TeamRegistry {
     team: Option<Team>,
     ready_agents: HashSet<AgentId>,
@@ -26,6 +26,10 @@ impl TeamRegistry {
 
     pub fn team(&self) -> Option<&Team> {
         self.team.as_ref()
+    }
+
+    pub fn state(&self) -> Option<TeamState> {
+        self.team.as_ref().map(|t| t.state)
     }
 
     pub fn apply(&mut self, event: &Event) -> Result<(), TeamError> {

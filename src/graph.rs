@@ -80,7 +80,7 @@ fn transition_allowed(from: &TaskStatus, to: &TaskStatus) -> bool {
     )
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TaskGraph {
     pub tasks: HashMap<TaskId, Task>,
     pub agents: HashMap<AgentId, Agent>,
