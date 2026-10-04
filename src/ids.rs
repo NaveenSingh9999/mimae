@@ -33,3 +33,4 @@ id!(AgentId);
 id!(ContractId);
 id!(DecisionId);
 id!(MessageId);
+id!(TeamId);

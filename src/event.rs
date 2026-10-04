@@ -1,6 +1,6 @@
 use crate::actor::Actor;
 use crate::entities::{
-    Agent, AgentState, Contract, Decision, Goal, Lease, Message, Task, TaskStatus,
+    Agent, AgentState, Contract, Decision, Goal, Lease, Message, Task, TaskStatus, Team,
 };
 use crate::ids::{AgentId, ContractId, MessageId, TaskId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -94,6 +94,12 @@ pub enum KnownPayload {
         to: AgentId,
         at_ms: u64,
     },
+    TeamCreated {
+        team: Team,
+    },
+    AgentReady {
+        agent_id: AgentId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -128,6 +134,8 @@ fn is_known_kind(kind: &str) -> bool {
             | "decision_recorded"
             | "message_sent"
             | "message_delivered"
+            | "team_created"
+            | "agent_ready"
     )
 }
 

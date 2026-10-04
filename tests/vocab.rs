@@ -133,6 +133,18 @@ fn all_known_payloads() -> Vec<KnownPayload> {
             to: AgentId::new(4),
             at_ms: 3_000,
         },
+        KnownPayload::TeamCreated {
+            team: Team {
+                id: TeamId::new(1),
+                head: AgentId::new(3),
+                mode: TeamMode::Auto,
+                state: TeamState::Initializing,
+                members: vec![AgentId::new(3)],
+            },
+        },
+        KnownPayload::AgentReady {
+            agent_id: AgentId::new(3),
+        },
     ]
 }
 
@@ -169,6 +181,8 @@ fn known_payload_tags_match_crate_contract() {
         "decision_recorded",
         "message_sent",
         "message_delivered",
+        "team_created",
+        "agent_ready",
     ];
     for (payload, tag) in all_known_payloads().into_iter().zip(expected) {
         let json = serde_json::to_value(EventPayload::Known(payload)).unwrap();

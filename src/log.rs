@@ -47,10 +47,39 @@ pub trait EventStore {
         at_ms: u64,
     ) -> Result<Event, LogError>;
     fn events(&self) -> Result<Vec<Event>, LogError>;
+    fn stream(&self) -> Result<EventStream, LogError>;
     fn high_water_seq(&self) -> u64;
     fn len(&self) -> u64;
     fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+pub struct EventStream {
+    lines: std::io::Lines<BufReader<File>>,
+    line_no: usize,
+}
+
+impl Iterator for EventStream {
+    type Item = Result<Event, LogError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.lines.next() {
+                Some(Ok(line)) if line.trim().is_empty() => continue,
+                Some(Ok(line)) => {
+                    self.line_no += 1;
+                    return Some(serde_json::from_str::<Event>(&line).map_err(|source| {
+                        LogError::Corrupt {
+                            line: self.line_no,
+                            source,
+                        }
+                    }));
+                }
+                Some(Err(err)) => return Some(Err(LogError::Io(err))),
+                None => return None,
+            }
+        }
     }
 }
 
@@ -190,6 +219,13 @@ impl EventStore for EventLog {
             out.push(event);
         }
         Ok(out)
+    }
+
+    fn stream(&self) -> Result<EventStream, LogError> {
+        Ok(EventStream {
+            lines: BufReader::new(File::open(&self.path)?).lines(),
+            line_no: 0,
+        })
     }
 
     fn high_water_seq(&self) -> u64 {

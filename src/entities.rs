@@ -1,5 +1,5 @@
 use crate::actor::Actor;
-use crate::ids::{AgentId, ContractId, DecisionId, GoalId, MessageId, TaskId};
+use crate::ids::{AgentId, ContractId, DecisionId, GoalId, MessageId, TaskId, TeamId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,6 +57,34 @@ pub enum MessageKind {
     ReviewRequest,
     ReviewResult,
     Escalation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamMode {
+    #[default]
+    Auto,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TeamState {
+    Initializing,
+    Ready,
+    Running,
+    Integrating,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Team {
+    pub id: TeamId,
+    pub head: AgentId,
+    pub mode: TeamMode,
+    pub state: TeamState,
+    pub members: Vec<AgentId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
