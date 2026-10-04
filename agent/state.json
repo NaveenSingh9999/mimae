@@ -4,19 +4,19 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "step 2 (event log) implemented and verified",
+  "status": "step 3 (TaskGraph fold + atomic claim + TeamRegistry) implemented, tested, committed",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
     "Recorded decisions D1-D13 in DECISIONS.md",
     "Step 1 implemented: src/{lib,ids,actor,entities,event}.rs + tests/vocab.rs; 8 tests pass, clippy -D warnings clean, fmt clean",
-    "Step 2 implemented: src/log.rs — append-only JSON-lines log, flock single-writer, fsync per append, torn-tail recovery on open; tests/log.rs 7 tests pass, clippy/fmt clean"
+    "Step 2 implemented: src/log.rs — append-only JSON-lines log, flock single-writer, fsync per append, torn-tail recovery on open; tests/log.rs 7 tests pass, clippy/fmt clean",
+    "Step 3: src/graph.rs (strict fold, stream()-based replay, dep-gated readiness, deterministic ready ordering, atomic claim) + src/team.rs (TeamState lifecycle incl. initializing->ready->running) + tests (graph: 8 incl. 50-task 2-thread barrier concurrency stress & from-log replay equality; team: 4) — 27 tests, clippy/fmt clean, commit c41a22b"
   ],
   "open_blockers": [
     "Section 17 open questions mostly resolved via DECISIONS.md D1-D13; remaining OPEN: gate4agent evaluation result, Antigravity CLI control surface, Qwen Code channels"
   ],
   "next_steps": [
-    "Step 3: task graph + atomic claim with concurrent stress test",
     "Step 4: leases + heartbeats with expiry recovery",
     "Step 5: deterministic coordinator against fake agents",
     "Step 6: fake agent harness for deterministic core testing"
