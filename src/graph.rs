@@ -30,7 +30,10 @@ pub enum FoldError {
         to: TaskStatus,
     },
     #[error("agent {agent_id} is currently in state {actual:?}, event assumed otherwise")]
-    AgentStateMismatch { agent_id: AgentId, actual: AgentState },
+    AgentStateMismatch {
+        agent_id: AgentId,
+        actual: AgentState,
+    },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
