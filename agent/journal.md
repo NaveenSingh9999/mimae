@@ -23,3 +23,11 @@
 ## Prior art to study before adapters (Section 18)
 
 ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor planner/worker, C-compiler harness, CooperBench, MAST, Orca orchestration.
+
+## Step 3 — TaskGraph fold + atomic claim + TeamRegistry (c41a22b)
+
+- src/graph.rs: TaskGraph = fold over EventStore::stream() (never holds Vec<Event>; O(tasks) memory). Strict transition table derived from brief 8.2; duplicates (task/agent) and unknown deps fail; TaskClaimed fold is idempotent; LeaseHeartbeat/LeaseExpired refreshed/reset to Ready; illegal edges yield FoldError with expected vs observed state.
+- src/team.rs: TeamRegistry folds TeamCreated/AgentRegistered/AgentReady/TaskClaimed — state stays Initializing until every member pinged ready, then Ready; first claim advances to Running. Rejects unknown members and pre-creation events.
+- readiness: task must have all deps in Done plus no active lease; ready() sorted by TaskId (T4 determinism).
+- claim(): NoSuchAgent, DepsNotMet, StatusNotClaimable, ActiveLease — emits TaskClaimed via EventLog so seq/durability are the log's job.
+- Tests: tests/graph.rs 8 (incl. 50-task barrier-synchronized 2-thread claim stress asserting exactly one owner per task, plus from-log replay equality of full graph state after drop and reopen). tests/team.rs 4. 27/27 total, clippy -D warnings clean, fmt clean.
