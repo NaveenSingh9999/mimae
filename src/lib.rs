@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 pub mod actor;
 pub mod entities;
 pub mod event;

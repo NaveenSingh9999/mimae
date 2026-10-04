@@ -63,6 +63,7 @@ pub struct EventLog {
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code)]
 fn try_lock(file: &File) -> Result<bool, io::Error> {
     use std::os::unix::io::AsRawFd;
     let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
