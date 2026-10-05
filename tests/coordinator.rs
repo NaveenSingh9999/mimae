@@ -299,3 +299,75 @@ fn reopen_replays_full_state_from_log() {
     assert!(t.lease.is_some());
     assert_eq!(coord.high_water_seq(), 6);
 }
+
+#[test]
+fn claim_before_ready_gate_is_rejected_and_log_uncorrupted() {
+    let path = temp_path("coord5.jsonl");
+    {
+        let (mut coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+        coord
+            .publish(
+                Actor::Coordinator,
+                EventPayload::Known(KnownPayload::TeamCreated { team: team() }),
+                vec![],
+                1,
+            )
+            .unwrap();
+        coord
+            .publish(
+                Actor::Coordinator,
+                EventPayload::Known(KnownPayload::AgentRegistered { agent: agent(1) }),
+                vec![],
+                2,
+            )
+            .unwrap();
+        coord
+            .publish(
+                Actor::Coordinator,
+                EventPayload::Known(KnownPayload::TaskCreated {
+                    task: task(1, vec![]),
+                }),
+                vec![],
+                3,
+            )
+            .unwrap();
+        let err = coord
+            .claim(TaskId::new(1), AgentId::new(1), WriteScope::default(), 1, 1)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::Team(TeamError::NotDispatchable(TeamState::Initializing))
+        ));
+        assert_eq!(coord.high_water_seq(), 3);
+    }
+    let (coord2, info) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    assert_eq!(info.events, 3);
+    assert_eq!(
+        coord2.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Proposed
+    );
+}
+
+#[test]
+fn rejected_publish_can_still_reopen() {
+    let path = temp_path("coord6.jsonl");
+    {
+        let (mut coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+        coord
+            .publish(
+                Actor::Coordinator,
+                EventPayload::Known(KnownPayload::TeamCreated { team: team() }),
+                vec![],
+                1,
+            )
+            .unwrap();
+        let _ = coord.publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::TeamCreated { team: team() }),
+            vec![],
+            2,
+        );
+    }
+    let (_c, info) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    assert_eq!(info.events, 1);
+}

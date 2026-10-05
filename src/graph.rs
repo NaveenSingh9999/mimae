@@ -183,7 +183,10 @@ impl TaskGraph {
                 if task.owner == Some(*agent_id) {
                     task.owner = None;
                     task.lease = None;
-                    if matches!(task.status, TaskStatus::Claimed | TaskStatus::InProgress) {
+                    if matches!(
+                        task.status,
+                        TaskStatus::Claimed | TaskStatus::InProgress | TaskStatus::InReview
+                    ) {
                         task.status = TaskStatus::Ready;
                     }
                 }

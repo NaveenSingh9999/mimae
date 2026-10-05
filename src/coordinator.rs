@@ -80,15 +80,26 @@ impl Coordinator {
         causes: Vec<u64>,
         at_ms: u64,
     ) -> Result<Event, CoreError> {
-        let probe = Event::new(0, actor, payload.clone(), causes.clone(), at_ms);
-        let mut g = self.graph.clone();
-        let mut t = self.team.clone();
-        g.apply(&probe)?;
-        t.apply(&probe)?;
-        let event = self.log.append(actor, payload, causes, at_ms)?;
-        self.graph = g;
-        self.team = t;
-        Ok(event)
+        let event = Event::new(self.log.high_water_seq() + 1, actor, payload, causes, at_ms);
+        if let Err(err) = self.graph.apply(&event) {
+            return Err(CoreError::Fold(err));
+        }
+        if let Err(err) = self.team.apply(&event) {
+            self.rebuild_views()?;
+            return Err(CoreError::Team(err));
+        }
+        match self.log.append(
+            event.actor,
+            event.payload.clone(),
+            event.causes.clone(),
+            event.at_ms,
+        ) {
+            Ok(committed) => Ok(committed),
+            Err(err) => {
+                self.rebuild_views()?;
+                Err(CoreError::Log(err))
+            }
+        }
     }
 
     pub fn claim(
@@ -99,21 +110,44 @@ impl Coordinator {
         now_ms: u64,
         ttl_ms: u64,
     ) -> Result<Lease, CoreError> {
-        let mut g = self.graph.clone();
-        let lease = g.claim(task_id, agent_id, scope, now_ms, ttl_ms)?;
+        if !matches!(
+            self.team.state(),
+            Some(crate::entities::TeamState::Ready) | Some(crate::entities::TeamState::Running)
+        ) {
+            return Err(CoreError::Team(TeamError::NotDispatchable(
+                self.team
+                    .state()
+                    .unwrap_or(crate::entities::TeamState::Initializing),
+            )));
+        }
+        let lease = self.graph.claim(task_id, agent_id, scope, now_ms, ttl_ms)?;
         let payload = EventPayload::Known(KnownPayload::TaskClaimed {
             task_id,
             agent_id,
             lease: lease.clone(),
         });
-        let event = self
-            .log
-            .append(Actor::Coordinator, payload, vec![], now_ms)?;
-        g.apply(&event)?;
-        let mut t = self.team.clone();
-        t.apply(&event)?;
-        self.graph = g;
-        self.team = t;
-        Ok(lease)
+        let event = Event::new(
+            self.log.high_water_seq() + 1,
+            Actor::Coordinator,
+            payload,
+            vec![],
+            now_ms,
+        );
+        if let Err(err) = self.team.apply(&event) {
+            self.rebuild_views()?;
+            return Err(CoreError::Team(err));
+        }
+        match self.log.append(
+            event.actor,
+            event.payload.clone(),
+            event.causes.clone(),
+            event.at_ms,
+        ) {
+            Ok(_) => Ok(lease),
+            Err(err) => {
+                self.rebuild_views()?;
+                Err(CoreError::Log(err))
+            }
+        }
     }
 }

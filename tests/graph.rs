@@ -79,15 +79,20 @@ fn readiness_cascades_when_dependencies_complete() {
         ))
         .unwrap();
     graph
-        .claim(
-            TaskId::new(1),
-            AgentId::new(1),
-            WriteScope::default(),
-            1_000,
-            5_000,
-        )
+        .apply(&event_of(
+            4_5,
+            KnownPayload::TaskClaimed {
+                task_id: TaskId::new(1),
+                agent_id: AgentId::new(1),
+                lease: Lease {
+                    owner: AgentId::new(1),
+                    scope: WriteScope::default(),
+                    expires_at_ms: 6_000,
+                    last_heartbeat_ms: 1_000,
+                },
+            },
+        ))
         .unwrap();
-    graph.tasks.get(&TaskId::new(1)).unwrap();
     graph
         .apply(&event_of(
             5,
@@ -501,4 +506,66 @@ fn replay_from_log_reproduces_same_state() {
     assert_eq!(a.status, b.status);
     assert_eq!(a.owner, b.owner);
     assert_eq!(a.lease, b.lease);
+}
+
+#[test]
+fn lease_expired_while_in_review_also_resets_to_ready() {
+    let mut graph = TaskGraph::new();
+    graph
+        .apply(&event_of(
+            1,
+            KnownPayload::AgentRegistered { agent: agent(1) },
+        ))
+        .unwrap();
+    graph
+        .apply(&event_of(
+            2,
+            KnownPayload::TaskCreated {
+                task: task(1, 10, vec![]),
+            },
+        ))
+        .unwrap();
+    graph
+        .claim(
+            TaskId::new(1),
+            AgentId::new(1),
+            WriteScope::default(),
+            1_000,
+            2_000,
+        )
+        .unwrap();
+    for (i, (from, to)) in [
+        (TaskStatus::Claimed, TaskStatus::InProgress),
+        (TaskStatus::InProgress, TaskStatus::InReview),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let _ = i;
+        graph
+            .apply(&event_of(
+                10 + i as u64,
+                KnownPayload::TaskStatusChanged {
+                    task_id: TaskId::new(1),
+                    from: from.clone(),
+                    to: to.clone(),
+                    reason: None,
+                },
+            ))
+            .unwrap();
+    }
+    assert_eq!(graph.tasks[&TaskId::new(1)].status, TaskStatus::InReview);
+    graph
+        .apply(&event_of(
+            20,
+            KnownPayload::LeaseExpired {
+                task_id: TaskId::new(1),
+                agent_id: AgentId::new(1),
+            },
+        ))
+        .unwrap();
+    let t = &graph.tasks[&TaskId::new(1)];
+    assert_eq!(t.status, TaskStatus::Ready);
+    assert!(t.owner.is_none());
+    assert!(t.lease.is_none());
 }

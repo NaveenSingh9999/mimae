@@ -11,6 +11,8 @@ pub enum TeamError {
     NotInitialized,
     #[error("agent {0} is not a team member")]
     NotAMember(AgentId),
+    #[error("team cannot accept task_claimed while in state {0:?}")]
+    NotDispatchable(TeamState),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -74,8 +76,14 @@ impl TeamRegistry {
                 let Some(team) = &mut self.team else {
                     return Err(TeamError::NotInitialized);
                 };
-                if team.state == TeamState::Ready {
-                    team.state = TeamState::Running;
+                match team.state {
+                    TeamState::Ready => {
+                        team.state = TeamState::Running;
+                    }
+                    TeamState::Running => {}
+                    other => {
+                        return Err(TeamError::NotDispatchable(other));
+                    }
                 }
             }
             _ => {}
