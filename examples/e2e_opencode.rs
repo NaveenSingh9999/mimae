@@ -18,10 +18,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let log_path = tmp.join("run.log");
 
     let port = OpenCodeAdapter::free_port().ok_or("no free port")?;
-    println!("[example] spawning opencode on 127.0.0.1:{port} in {}", tmp.display());
+    println!(
+        "[example] spawning opencode on 127.0.0.1:{port} in {}",
+        tmp.display()
+    );
     let mut adapter = OpenCodeAdapter::spawn_local(&tmp.to_string_lossy(), port)
         .map_err(|e| format!("spawn opencode: {e}"))?;
-    match adapter.start_session(&tmp.to_string_lossy(), "You reply with only the word returned.", None) {
+    match adapter.start_session(
+        &tmp.to_string_lossy(),
+        "You reply with only the word returned.",
+        None,
+    ) {
         SessionReply::Started => println!("[example] session started"),
         SessionReply::Failed { error } => return Err(error.into()),
     }
@@ -97,7 +104,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         vec![],
         now_ms(),
     )?;
-    let _ = coord.claim(TaskId::new(1), head, WriteScope::default(), now_ms(), 120_000)?;
+    let _ = coord.claim(
+        TaskId::new(1),
+        head,
+        WriteScope::default(),
+        now_ms(),
+        120_000,
+    )?;
     println!("[example] claimed t1 by agent1");
     let _ = coord.check_for_expired_leases(now_ms())?;
     let _ = coord.publish(

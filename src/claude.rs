@@ -246,7 +246,7 @@ pub fn parse_stream_line(line: &str) -> Vec<SessionEvent> {
         "system" => {
             if let Some(subtype) = v.get("subtype").and_then(|s| s.as_str()) {
                 match subtype {
-                    "init" => {
+                    "init" | "session_start" => {
                         let id = v
                             .get("session_id")
                             .and_then(|s| s.as_str())
