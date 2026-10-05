@@ -84,3 +84,9 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - Gate lifecycle helpers with reviewer loop cap; verification_status labels Verified/Unverified/Failed per task requirement.
 - Deterministic injection-marker quarantine at router ingest (logged, never delivered); replay preserves quarantine.
 - tests/verify.rs (6). 75/75 total green, clippy -D warnings clean, fmt clean.
+
+## Phase 8 — evaluation harness
+
+- src/eval.rs: metrics collected purely by replaying the event log; baselines as coordination regimes over identical scripted tasks; cost comparison table.
+- tests/eval.rs: 12 scenarios. Notable verification: naive chat costs 40 messages vs 3 for Mimae on the same pair task; crash recovery loses zero tasks; milestone floods collapse to the 64-item digest cap.
+- During verification, found real flakiness: parallel tests sharing one log file collide on the single-writer flock. Fixed by per-test log files plus explicit drop-before-reopen; also fixed piped-exit-code masking in my own check commands.
