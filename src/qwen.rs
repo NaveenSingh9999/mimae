@@ -3,7 +3,6 @@ use crate::adapter::{
 };
 use crate::entities::{AgentState, Capability};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
 use std::time::Duration;
 
 pub struct QwenAdapter {
@@ -12,7 +11,7 @@ pub struct QwenAdapter {
     brief: Option<String>,
     pending_context: Vec<String>,
     state: AgentState,
-    child: Mutex<Option<Child>>,
+    child: Option<Child>,
     timeout: Duration,
 }
 
@@ -24,7 +23,7 @@ impl QwenAdapter {
             brief: None,
             pending_context: Vec::new(),
             state: AgentState::Idle,
-            child: Mutex::new(None),
+            child: None,
             timeout: Duration::from_secs(300),
         }
     }
@@ -51,9 +50,7 @@ impl Default for QwenAdapter {
 
 impl Drop for QwenAdapter {
     fn drop(&mut self) {
-        if let Ok(mut guard) = self.child.lock()
-            && let Some(mut c) = guard.take()
-        {
+        if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
         }
@@ -116,7 +113,7 @@ impl AgentAdapter for QwenAdapter {
                         }];
                     }
                 };
-                *self.child.lock().expect("child mutex poisoned") = Some(child);
+                self.child = Some(child);
                 let mut result: Vec<SessionEvent> = Vec::new();
                 let mut buf = String::new();
                 use std::io::BufRead;
@@ -138,8 +135,7 @@ impl AgentAdapter for QwenAdapter {
                     }
                 }
                 let ended = {
-                    let mut guard = self.child.lock().expect("child mutex poisoned");
-                    if let Some(mut c) = guard.take() {
+                    if let Some(mut c) = self.child.take() {
                         match c.wait() {
                             Ok(status) => status.success(),
                             Err(_) => false,
@@ -185,8 +181,7 @@ impl AgentAdapter for QwenAdapter {
     }
 
     fn interrupt(&mut self) -> bool {
-        let mut guard = self.child.lock().expect("child mutex poisoned");
-        if let Some(mut c) = guard.take() {
+        if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
         }

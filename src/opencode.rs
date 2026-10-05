@@ -3,14 +3,13 @@ use crate::adapter::{
 };
 use crate::entities::{AgentState, Capability};
 use std::process::{Child, Command};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct OpenCodeAdapter {
     url: String,
     session_id: Option<String>,
     state: AgentState,
-    child: Arc<Mutex<Option<Child>>>,
+    child: Option<Child>,
     auth: Option<String>,
     timeout: Option<Duration>,
 }
@@ -38,7 +37,7 @@ impl OpenCodeAdapter {
             url: url.clone(),
             session_id: None,
             state: AgentState::Dead,
-            child: Arc::new(Mutex::new(Some(child))),
+            child: Some(child),
             auth: env_auth(),
             timeout: Some(Duration::from_secs(120)),
         };
@@ -51,7 +50,7 @@ impl OpenCodeAdapter {
             url: url.trim_end_matches('/').to_string(),
             session_id: None,
             state: AgentState::Idle,
-            child: Arc::new(Mutex::new(None)),
+            child: None,
             auth: env_auth(),
             timeout: Some(Duration::from_secs(30)),
         }
@@ -286,9 +285,7 @@ impl AgentAdapter for OpenCodeAdapter {
 
 impl Drop for OpenCodeAdapter {
     fn drop(&mut self) {
-        if let Ok(mut guard) = self.child.lock()
-            && let Some(mut child) = guard.take()
-        {
+        if let Some(mut child) = self.child.take() {
             let _ = child.kill();
             let _ = child.wait();
         }

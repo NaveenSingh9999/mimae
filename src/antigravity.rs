@@ -3,7 +3,6 @@ use crate::adapter::{
 };
 use crate::entities::{AgentState, Capability};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
 use std::time::Duration;
 
 pub struct AntigravityAdapter {
@@ -12,7 +11,7 @@ pub struct AntigravityAdapter {
     brief: Option<String>,
     pending_context: Vec<String>,
     state: AgentState,
-    child: Mutex<Option<Child>>,
+    child: Option<Child>,
     timeout: Duration,
 }
 
@@ -24,7 +23,7 @@ impl AntigravityAdapter {
             brief: None,
             pending_context: Vec::new(),
             state: AgentState::Idle,
-            child: Mutex::new(None),
+            child: None,
             timeout: Duration::from_secs(300),
         }
     }
@@ -56,9 +55,7 @@ impl Default for AntigravityAdapter {
 
 impl Drop for AntigravityAdapter {
     fn drop(&mut self) {
-        if let Ok(mut guard) = self.child.lock()
-            && let Some(mut c) = guard.take()
-        {
+        if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
         }
@@ -121,7 +118,7 @@ impl AgentAdapter for AntigravityAdapter {
                         }];
                     }
                 };
-                *self.child.lock().expect("child mutex poisoned") = Some(child);
+                self.child = Some(child);
                 let mut events: Vec<SessionEvent> = Vec::new();
                 use std::io::BufRead;
                 let mut reader = std::io::BufReader::new(stdout);
@@ -159,8 +156,7 @@ impl AgentAdapter for AntigravityAdapter {
                     }
                 }
                 let wait_ok = {
-                    let mut guard = self.child.lock().expect("child mutex poisoned");
-                    if let Some(mut c) = guard.take() {
+                    if let Some(mut c) = self.child.take() {
                         match c.wait() {
                             Ok(status) => status.success(),
                             Err(_) => false,
@@ -207,8 +203,7 @@ impl AgentAdapter for AntigravityAdapter {
     }
 
     fn interrupt(&mut self) -> bool {
-        let mut guard = self.child.lock().expect("child mutex poisoned");
-        if let Some(mut c) = guard.take() {
+        if let Some(mut c) = self.child.take() {
             let _ = c.kill();
             let _ = c.wait();
         }
