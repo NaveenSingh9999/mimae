@@ -34,3 +34,5 @@ id!(ContractId);
 id!(DecisionId);
 id!(MessageId);
 id!(TeamId);
+id!(ArtifactId);
+id!(GateId);

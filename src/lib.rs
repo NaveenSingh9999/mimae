@@ -17,6 +17,7 @@ pub mod planner;
 pub mod qwen;
 pub mod router;
 pub mod team;
+pub mod verify;
 pub mod workspace;
 
 pub use actor::Actor;
@@ -41,9 +42,14 @@ pub use planner::{
 };
 pub use qwen::QwenAdapter;
 pub use router::{
-    DeliveryTier, Digest, QueuedMessage, RouteError, RouteOutcome, Router, RouterConfig,
+    DeliveryTier, Digest, InjectionFlag, QueuedMessage, RouteError, RouteOutcome, Router,
+    RouterConfig, detect_injection_markers,
 };
 pub use team::{TeamError, TeamRegistry};
+pub use verify::{
+    MAX_REVIEW_ROUNDS, VerificationStatus, VerifyError, decide_gate, open_gate, record_artifact,
+    verification_status, verify_artifact,
+};
 pub use workspace::{
     CheckOutcome, IntegrationGate, MergeOutcome, Overlap, PathConflict, PathLeaseRegistry,
     PathOwner, WorkspaceError, WorkspaceManager, WorktreeInfo, predict_overlaps,

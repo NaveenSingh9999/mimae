@@ -1,9 +1,9 @@
 use crate::entities::{
-    Agent, AgentState, Contract, ContractStatus, Decision, Goal, Lease, Task, TaskStatus,
-    WriteScope,
+    Agent, AgentState, Artifact, Contract, ContractStatus, Decision, Gate, GateStatus, Goal, Lease,
+    Task, TaskStatus, WriteScope,
 };
 use crate::event::{Event, EventPayload, KnownPayload};
-use crate::ids::{AgentId, ContractId, DecisionId, GoalId, TaskId};
+use crate::ids::{AgentId, ArtifactId, ContractId, DecisionId, GateId, GoalId, TaskId};
 use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -68,6 +68,18 @@ pub enum FoldError {
     DuplicateGoal(GoalId),
     #[error("duplicate decision {0}")]
     DuplicateDecision(DecisionId),
+    #[error("duplicate artifact {0}")]
+    DuplicateArtifact(ArtifactId),
+    #[error("artifact {0} references unknown task {1}")]
+    UnknownArtifactTask(ArtifactId, TaskId),
+    #[error("duplicate gate {0}")]
+    DuplicateGate(GateId),
+    #[error("unknown gate {0}")]
+    UnknownGate(GateId),
+    #[error("gate {0} references unknown task {1}")]
+    UnknownGateTask(GateId, TaskId),
+    #[error("gate {0} is already decided")]
+    GateAlreadyDecided(GateId),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -121,6 +133,8 @@ pub struct TaskGraph {
     pub contracts: HashMap<ContractId, Contract>,
     pub goals: HashMap<GoalId, Goal>,
     pub decisions: Vec<Decision>,
+    pub artifacts: HashMap<ArtifactId, Artifact>,
+    pub gates: HashMap<GateId, Gate>,
 }
 
 impl TaskGraph {
@@ -267,6 +281,55 @@ impl TaskGraph {
                     return Err(FoldError::DuplicateDecision(decision.id));
                 }
                 self.decisions.push(decision.clone());
+            }
+            KnownPayload::ArtifactRecorded { artifact } => {
+                if let Some(stored) = self.artifacts.get_mut(&artifact.id) {
+                    if stored.task_id == artifact.task_id
+                        && stored.location == artifact.location
+                        && stored.producer == artifact.producer
+                    {
+                        stored.verification = artifact.verification;
+                        return Ok(());
+                    }
+                    return Err(FoldError::DuplicateArtifact(artifact.id));
+                }
+                if !self.tasks.contains_key(&artifact.task_id) {
+                    return Err(FoldError::UnknownArtifactTask(
+                        artifact.id,
+                        artifact.task_id,
+                    ));
+                }
+                self.artifacts.insert(artifact.id, artifact.clone());
+            }
+            KnownPayload::GateOpened { gate } => {
+                if self.gates.contains_key(&gate.id) {
+                    return Err(FoldError::DuplicateGate(gate.id));
+                }
+                if !self.tasks.contains_key(&gate.task_id) {
+                    return Err(FoldError::UnknownGateTask(gate.id, gate.task_id));
+                }
+                if gate.status != GateStatus::Pending {
+                    return Err(FoldError::GateAlreadyDecided(gate.id));
+                }
+                self.gates.insert(gate.id, gate.clone());
+            }
+            KnownPayload::GateDecided {
+                gate_id,
+                passed,
+                detail: _,
+            } => {
+                let stored = self
+                    .gates
+                    .get_mut(gate_id)
+                    .ok_or(FoldError::UnknownGate(*gate_id))?;
+                if stored.status != GateStatus::Pending {
+                    return Err(FoldError::GateAlreadyDecided(*gate_id));
+                }
+                stored.status = if *passed {
+                    GateStatus::Passed
+                } else {
+                    GateStatus::Failed
+                };
             }
             KnownPayload::ContractProposed { contract } => {
                 if self.contracts.contains_key(&contract.id) {

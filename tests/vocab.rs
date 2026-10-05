@@ -146,6 +146,28 @@ fn all_known_payloads() -> Vec<KnownPayload> {
         KnownPayload::AgentReady {
             agent_id: AgentId::new(3),
         },
+        KnownPayload::ArtifactRecorded {
+            artifact: Artifact {
+                id: ArtifactId::new(11),
+                task_id: TaskId::new(1),
+                location: "branch feature/x".into(),
+                producer: AgentId::new(3),
+                verification: ArtifactStatus::Unverified,
+            },
+        },
+        KnownPayload::GateOpened {
+            gate: Gate {
+                id: GateId::new(12),
+                task_id: TaskId::new(1),
+                kind: GateKind::Human,
+                status: GateStatus::Pending,
+            },
+        },
+        KnownPayload::GateDecided {
+            gate_id: GateId::new(12),
+            passed: true,
+            detail: "approved".into(),
+        },
     ]
 }
 
@@ -184,6 +206,9 @@ fn known_payload_tags_match_crate_contract() {
         "message_delivered",
         "team_created",
         "agent_ready",
+        "artifact_recorded",
+        "gate_opened",
+        "gate_decided",
     ];
     for (payload, tag) in all_known_payloads().into_iter().zip(expected) {
         let json = serde_json::to_value(EventPayload::Known(payload)).unwrap();

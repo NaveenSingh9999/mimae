@@ -1,8 +1,9 @@
 use crate::actor::Actor;
 use crate::entities::{
-    Agent, AgentState, Contract, Decision, Goal, Lease, Message, Task, TaskStatus, Team,
+    Agent, AgentState, Artifact, Contract, Decision, Gate, Goal, Lease, Message, Task, TaskStatus,
+    Team,
 };
-use crate::ids::{AgentId, ContractId, MessageId, TaskId};
+use crate::ids::{AgentId, ContractId, GateId, MessageId, TaskId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -100,6 +101,17 @@ pub enum KnownPayload {
     AgentReady {
         agent_id: AgentId,
     },
+    ArtifactRecorded {
+        artifact: Artifact,
+    },
+    GateOpened {
+        gate: Gate,
+    },
+    GateDecided {
+        gate_id: GateId,
+        passed: bool,
+        detail: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +148,9 @@ fn is_known_kind(kind: &str) -> bool {
             | "message_delivered"
             | "team_created"
             | "agent_ready"
+            | "artifact_recorded"
+            | "gate_opened"
+            | "gate_decided"
     )
 }
 

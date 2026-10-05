@@ -44,12 +44,57 @@ impl Digest {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InjectionFlag {
+    InstructionOverride,
+    SystemDisclosure,
+    RoleReassignment,
+    PrivilegeEscalation,
+}
+
+pub fn detect_injection_markers(body: &str) -> Vec<InjectionFlag> {
+    let lower = body.to_lowercase();
+    let mut flags = Vec::new();
+    if [
+        "ignore previous instructions",
+        "ignore all previous instructions",
+        "disregard previous instructions",
+        "disregard all prior instructions",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+    {
+        flags.push(InjectionFlag::InstructionOverride);
+    }
+    if [
+        "repeat your system prompt",
+        "reveal your system prompt",
+        "print your system instructions",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+    {
+        flags.push(InjectionFlag::SystemDisclosure);
+    }
+    if lower.contains("you are now ") {
+        flags.push(InjectionFlag::RoleReassignment);
+    }
+    if ["grant admin", "escalate privileges"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
+        flags.push(InjectionFlag::PrivilegeEscalation);
+    }
+    flags
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RouteOutcome {
     Queued(Vec<AgentId>),
     Digested(Vec<AgentId>),
     DroppedDuplicate,
     RateLimited(AgentId),
+    Quarantined(Vec<InjectionFlag>),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -255,6 +300,10 @@ impl Router {
         }
         if message.recipients.len() > 1 && !matches!(message.sender, Actor::Human | Actor::Host) {
             return Err(RouteError::BroadcastForbidden);
+        }
+        let flags = detect_injection_markers(&message.body);
+        if !flags.is_empty() {
+            return Ok(RouteOutcome::Quarantined(flags));
         }
         let fingerprint = message_fingerprint(message);
         if self.seen.iter().any(|(hash, _)| *hash == fingerprint) {

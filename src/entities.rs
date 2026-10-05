@@ -1,5 +1,7 @@
 use crate::actor::Actor;
-use crate::ids::{AgentId, ContractId, DecisionId, GoalId, MessageId, TaskId, TeamId};
+use crate::ids::{
+    AgentId, ArtifactId, ContractId, DecisionId, GateId, GoalId, MessageId, TaskId, TeamId,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +194,48 @@ pub struct Decision {
     pub rationale: String,
     pub affected_scopes: Vec<WriteScope>,
     pub at_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactStatus {
+    Unverified,
+    Verified,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Artifact {
+    pub id: ArtifactId,
+    pub task_id: TaskId,
+    pub location: String,
+    pub producer: AgentId,
+    pub verification: ArtifactStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateKind {
+    Tests { command: String },
+    Oracle { reference: String },
+    Reviewer,
+    Human,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GateStatus {
+    Pending,
+    Passed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Gate {
+    pub id: GateId,
+    pub task_id: TaskId,
+    pub kind: GateKind,
+    pub status: GateStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
