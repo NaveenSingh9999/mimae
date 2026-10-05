@@ -97,3 +97,8 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - src/bin/mimae-daemon.rs: --port/--log arg parsing, replays log on open, prints protocol info to stderr.
 - README documents library/daemon/bindings order, full method table, and host responsibilities.
 - tests/daemon.rs (7). 101/101 total green, clippy -D warnings clean, fmt clean.
+
+## Head drive loop
+
+- src/drive.rs: deterministic head cycle using planner assignment + adapter turns; failed turns mark tasks Failed; goal loop exits on completion or round cap.
+- tests/drive.rs (4). 105/105 total green, clippy -D warnings clean, fmt clean.

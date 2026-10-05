@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "Phase 9 embedding done; 101 tests green",
+  "status": "Head drive loop done; 105 tests green",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -23,12 +23,13 @@
     "Phase 5: src/router.rs — typed inboxes, scope/contract-aware routing, delivery tiers (Interrupt/Hook/NextTurn/NewTurn/Digested), anti-jam (rate limits, dedupe, digest batching, broadcast rules); src/context.rs — curated briefs, clean-context reviews, digest rendering; TaskGraph folds goals/decisions; Router wired into Coordinator publish/rebuild. tests/router.rs (9) + tests/context.rs (4). 82 tests total, clippy/fmt clean.",
     "Phase 7: Artifact/Gate entities + ArtifactRecorded/GateOpened/GateDecided events folded in TaskGraph (dup/stale/double-decide rejected); src/verify.rs — open_gate/decide_gate/record_artifact/verify_artifact, reviewer loop cap 3, verification_status Verified/Unverified/Failed labeling; injection-marker quarantine (InstructionOverride/SystemDisclosure/RoleReassignment/PrivilegeEscalation) on router ingest. tests/verify.rs (6). 75 tests total, clippy/fmt clean.",
     "Phase 8: src/eval.rs — ScenarioReport/ScenarioMetrics collected by replaying the log (message counts by kind, lease expiries, reclaims, discovery-to-action latency, zero human interventions), Baseline::{Solo,Mimae,NaiveChat}, compare_message_cost table. tests/eval.rs: 12 scenarios (conflict replan, midflight contract change, heartbeat death, crash recovery, solo-to-trio, reviewer cap, quarantine, blocker routing, milestone flood, integration conflict, convoy release, baseline cost comparison). 94 tests total, clippy/fmt clean.",
-    "Phase 9: src/daemon.rs — newline-delimited JSON-RPC 2.0 dispatcher (17 methods) + threaded TCP serve loop on 127.0.0.1; src/bin/mimae-daemon.rs thin binary (--port/--log); Coordinator::events_since for poll subscription; PlanReceipt/GoalProgress now Serialize; README embedding section with protocol table; D20. tests/daemon.rs (7: dispatcher unit + live socket roundtrip). 101 tests total, clippy/fmt clean."
+    "Phase 9: src/daemon.rs — newline-delimited JSON-RPC 2.0 dispatcher (17 methods) + threaded TCP serve loop on 127.0.0.1; src/bin/mimae-daemon.rs thin binary (--port/--log); Coordinator::events_since for poll subscription; PlanReceipt/GoalProgress now Serialize; README embedding section with protocol table; D20. tests/daemon.rs (7: dispatcher unit + live socket roundtrip). 101 tests total, clippy/fmt clean.",
+    "Head drive loop: src/drive.rs — drive_agent_turn (sweep, capability assign, adapter turn, advance to Done / mark Failed) and drive_goal (round-robin until complete or round cap) over &mut dyn AgentAdapter with caller clock. tests/drive.rs (4) with scripted adapter. 105 tests total, clippy/fmt clean."
   ],
   "open_blockers": [
     "Remaining OPEN: Antigravity/Qwen/Mimo live conformance; Mimo envelope/session-id fields"
   ],
   "next_steps": [
-    "Await owner direction: planner auto-assignment loop, evaluation-harness follow-ups, native language bindings, or adapter live conformance"
+    "Await owner direction: evaluation-harness follow-ups, native language bindings, or adapter live conformance"
   ]
 }
