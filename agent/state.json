@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "steps 1-6 done",
+  "status": "steps 1-7 done (vocab, log, TaskGraph+claim, Coordinator, lease TTL+heartbeat expiry, AgentAdapter contract, OpenCode + Claude adapters)",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -21,7 +21,6 @@
     "Section 17 open questions mostly resolved via DECISIONS.md D1-D13; remaining OPEN: gate4agent evaluation result, Antigravity CLI control surface, Qwen Code channels"
   ],
   "next_steps": [
-    "Step 7: Claude Code T2 headless JSON/stream-json adapter + hooks (code-ready, live conformance later on a box with claude installed)",
     "Step 8: Antigravity CLI adapter after verifying its driver surface",
     "Step 9: gate4agent prior-art evaluation (D3)"
   ]
