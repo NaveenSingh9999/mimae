@@ -64,3 +64,9 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 
 - src/workspace.rs: worktree lifecycle via git CLI, porcelain parsing that preserves status columns, path leases keyed by exact path, pairwise overlap prediction, integration gate that aborts conflicted merges before reporting paths and only fast-forwards main on clean merges + passing checks.
 - tests/workspace.rs: 6 tests using temp repos with local-only git identity config. 68/68 total green, clippy -D warnings clean, fmt clean.
+
+## Review pass (post-Phase 4)
+
+- `IntegrationGate::run_check` took no timeout and inherited stdio: a hung check would block the gate forever and a chatty one could deadlock on a full pipe. Now `run_check(dir, program, args, timeout)` polls `try_wait`, kills on deadline, returns `CheckOutcome::{Passed, Failed, TimedOut}`, stdio nulled. Covered by a real `sleep 30` kill test.
+- Verified no other unbounded subprocess waits: adapter turns go through `run_bounded_turn`, opencode HTTP calls carry per-call timeouts.
+- md conformance re-checked: task lifecycle, message taxonomy, dispatch gate, D16 late-join, lease semantics all match; Artifact/Gate entities intentionally deferred to Phase 7.
