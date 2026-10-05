@@ -1,6 +1,8 @@
-use crate::entities::{Agent, AgentState, Lease, Task, TaskStatus, WriteScope};
+use crate::entities::{
+    Agent, AgentState, Contract, ContractStatus, Lease, Task, TaskStatus, WriteScope,
+};
 use crate::event::{Event, EventPayload, KnownPayload};
-use crate::ids::{AgentId, TaskId};
+use crate::ids::{AgentId, ContractId, TaskId};
 use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -36,6 +38,31 @@ pub enum FoldError {
     },
     #[error("message body length {len} exceeds limit {limit}")]
     MessageTooLong { len: usize, limit: usize },
+    #[error("duplicate contract {0}")]
+    DuplicateContract(ContractId),
+    #[error("unknown contract {0}")]
+    UnknownContract(ContractId),
+    #[error("contract {contract_id} version {version} is not a valid initial version")]
+    InvalidContractVersion {
+        contract_id: ContractId,
+        version: u32,
+    },
+    #[error("contract {contract_id} has unexpected status {status:?} for this transition")]
+    InvalidContractStatus {
+        contract_id: ContractId,
+        status: ContractStatus,
+    },
+    #[error("contract {contract_id} references unknown task {party}")]
+    UnknownContractParty {
+        contract_id: ContractId,
+        party: TaskId,
+    },
+    #[error("contract {contract_id} version {got} does not match expected {expected}")]
+    StaleContractVersion {
+        contract_id: ContractId,
+        expected: u32,
+        got: u32,
+    },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -86,6 +113,7 @@ fn transition_allowed(from: &TaskStatus, to: &TaskStatus) -> bool {
 pub struct TaskGraph {
     pub tasks: HashMap<TaskId, Task>,
     pub agents: HashMap<AgentId, Agent>,
+    pub contracts: HashMap<ContractId, Contract>,
 }
 
 impl TaskGraph {
@@ -220,6 +248,77 @@ impl TaskGraph {
                 {
                     return Err(FoldError::MessageTooLong { len, limit });
                 }
+            }
+            KnownPayload::ContractProposed { contract } => {
+                if self.contracts.contains_key(&contract.id) {
+                    return Err(FoldError::DuplicateContract(contract.id));
+                }
+                if contract.version < 1 {
+                    return Err(FoldError::InvalidContractVersion {
+                        contract_id: contract.id,
+                        version: contract.version,
+                    });
+                }
+                if contract.status != ContractStatus::Proposed {
+                    return Err(FoldError::InvalidContractStatus {
+                        contract_id: contract.id,
+                        status: contract.status,
+                    });
+                }
+                for party in &contract.parties {
+                    if !self.tasks.contains_key(party) {
+                        return Err(FoldError::UnknownContractParty {
+                            contract_id: contract.id,
+                            party: *party,
+                        });
+                    }
+                }
+                self.contracts.insert(contract.id, contract.clone());
+            }
+            KnownPayload::ContractAccepted {
+                contract_id,
+                version,
+            } => {
+                let stored = self
+                    .contracts
+                    .get_mut(contract_id)
+                    .ok_or(FoldError::UnknownContract(*contract_id))?;
+                if stored.version != *version {
+                    return Err(FoldError::StaleContractVersion {
+                        contract_id: *contract_id,
+                        expected: stored.version,
+                        got: *version,
+                    });
+                }
+                stored.status = ContractStatus::Accepted;
+            }
+            KnownPayload::ContractChanged { contract } => {
+                let stored = self
+                    .contracts
+                    .get_mut(&contract.id)
+                    .ok_or(FoldError::UnknownContract(contract.id))?;
+                if contract.version <= stored.version {
+                    return Err(FoldError::StaleContractVersion {
+                        contract_id: contract.id,
+                        expected: stored.version.saturating_add(1),
+                        got: contract.version,
+                    });
+                }
+                if contract.status != ContractStatus::Changed {
+                    return Err(FoldError::InvalidContractStatus {
+                        contract_id: contract.id,
+                        status: contract.status,
+                    });
+                }
+                for party in &contract.parties {
+                    if !self.tasks.contains_key(party) {
+                        return Err(FoldError::UnknownContractParty {
+                            contract_id: contract.id,
+                            party: *party,
+                        });
+                    }
+                }
+                *stored = contract.clone();
             }
             _ => {}
         }

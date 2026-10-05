@@ -12,6 +12,7 @@ pub mod ids;
 pub mod log;
 pub mod mimo;
 pub mod opencode;
+pub mod planner;
 pub mod qwen;
 pub mod team;
 
@@ -27,5 +28,9 @@ pub use ids::*;
 pub use log::{Durability, EventLog, EventLogOptions, EventStore, EventStream, LogError, OpenInfo};
 pub use mimo::MimoAdapter;
 pub use opencode::OpenCodeAdapter;
+pub use planner::{
+    GoalProgress, PlanContract, PlanError, PlanReceipt, PlanTask, accept_contract, assign,
+    change_contract, goal_progress, next_assignment, plan_goal, propose_contract, record_decision,
+};
 pub use qwen::QwenAdapter;
 pub use team::{TeamError, TeamRegistry};
