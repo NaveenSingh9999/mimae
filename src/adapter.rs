@@ -60,6 +60,7 @@ pub enum SessionEvent {
     },
 }
 
+#[derive(Debug)]
 pub enum SessionReply {
     Started,
     Failed { error: String },
