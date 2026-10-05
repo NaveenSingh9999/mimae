@@ -2,6 +2,7 @@
 
 pub mod actor;
 pub mod adapter;
+pub mod claude;
 pub mod coordinator;
 pub mod entities;
 pub mod event;
@@ -13,6 +14,7 @@ pub mod team;
 
 pub use actor::Actor;
 pub use adapter::{AdapterCapabilities, AgentAdapter, SessionEvent, SessionReply, TransportMode};
+pub use claude::ClaudeAdapter;
 pub use coordinator::{Coordinator, CoreError};
 pub use entities::*;
 pub use event::{Event, EventPayload, KnownPayload, PROTOCOL_VERSION};
