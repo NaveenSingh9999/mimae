@@ -1040,3 +1040,202 @@ fn eval_baselines_compare_costs() {
     assert!(table.contains("mimae"));
     assert!(table.contains("naive"));
 }
+
+struct ScriptAdapter {
+    turns: std::collections::VecDeque<Vec<SessionEvent>>,
+}
+
+impl ScriptAdapter {
+    fn ok_times(n: usize) -> Self {
+        let mut turns = std::collections::VecDeque::new();
+        for _ in 0..n {
+            turns.push_back(vec![
+                SessionEvent::Ok {
+                    payload: "did it".into(),
+                },
+                SessionEvent::TurnComplete { ok: true },
+            ]);
+        }
+        Self { turns }
+    }
+}
+
+impl AgentAdapter for ScriptAdapter {
+    fn capabilities(&self) -> AdapterCapabilities {
+        AdapterCapabilities {
+            cli_name: "script".into(),
+            preferred_mode: TransportMode::HeadlessJson,
+            modes: vec![TransportMode::HeadlessJson],
+            can_interrupt: true,
+            can_resume: true,
+            can_inject_context: true,
+            supports_hooks: false,
+            declared_capabilities: vec![Capability::new("backend")],
+        }
+    }
+
+    fn start_session(&mut self, _: &str, _: &str, _: Option<&str>) -> SessionReply {
+        SessionReply::Started
+    }
+
+    fn send_turn(&mut self, _: &str) -> Vec<SessionEvent> {
+        self.turns.pop_front().unwrap_or_else(|| {
+            vec![
+                SessionEvent::Error {
+                    message: "no scripted turn".into(),
+                },
+                SessionEvent::TurnComplete { ok: false },
+            ]
+        })
+    }
+
+    fn interrupt(&mut self) -> bool {
+        true
+    }
+
+    fn resume(&mut self, _: &str) -> SessionReply {
+        SessionReply::Started
+    }
+
+    fn inject_context(&mut self, _: &str) -> bool {
+        true
+    }
+
+    fn liveness(&self) -> AgentState {
+        AgentState::Working
+    }
+}
+
+fn plan_pair(coord: &mut Coordinator, goal: u64) {
+    plan_goal(
+        coord,
+        mk_goal_id(goal),
+        vec![
+            PlanTask {
+                id: TaskId::new(1),
+                title: "a".into(),
+                brief: "do a".into(),
+                capability: Capability::new("backend"),
+                write_scope: WriteScope {
+                    paths: vec!["src/a".into()],
+                },
+                deps: vec![],
+                verification: Verification::None,
+                interfaces: vec![],
+            },
+            PlanTask {
+                id: TaskId::new(2),
+                title: "b".into(),
+                brief: "do b".into(),
+                capability: Capability::new("backend"),
+                write_scope: WriteScope {
+                    paths: vec!["src/b".into()],
+                },
+                deps: vec![TaskId::new(1)],
+                verification: Verification::None,
+                interfaces: vec![],
+            },
+        ],
+        vec![],
+        10,
+    )
+    .unwrap();
+}
+
+#[test]
+fn eval_driven_goal_two_agents_complete() {
+    let path = temp_log("driven-complete");
+    let _ = std::fs::remove_file(&path);
+    let (mut coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    setup_team(&mut coord, &[1, 2], 1);
+    plan_pair(&mut coord, 10);
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> = vec![
+        (AgentId::new(1), Box::new(ScriptAdapter::ok_times(4))),
+        (AgentId::new(2), Box::new(ScriptAdapter::ok_times(4))),
+    ];
+    let driven = drive_goal(&mut coord, &mut agents, GoalId::new(10), 100, 60_000, 10).unwrap();
+    assert!(driven.progress.is_complete());
+    assert_eq!(driven.progress.total, 2);
+    assert_eq!(driven.progress.done, 2);
+    drop(coord);
+    let report = report("driven-complete", &path, 5, true).unwrap();
+    assert!(report.success);
+    assert_eq!(report.metrics.tasks_done, 2);
+    assert_eq!(report.metrics.human_interventions, 0);
+}
+
+#[test]
+fn eval_driven_goal_stall_reclaim() {
+    let path = temp_log("driven-stall");
+    let _ = std::fs::remove_file(&path);
+    let (mut coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    setup_team(&mut coord, &[1, 2], 1);
+    plan_pair(&mut coord, 10);
+    coord
+        .claim(
+            TaskId::new(1),
+            AgentId::new(1),
+            WriteScope::default(),
+            100,
+            60_000,
+        )
+        .unwrap();
+    let swept = coord.check_for_expired_leases(200_000).unwrap();
+    assert_eq!(swept.len(), 1);
+    let two: Box<dyn AgentAdapter> = Box::new(ScriptAdapter::ok_times(4));
+    let mut agents = vec![(AgentId::new(2), two)];
+    let driven = drive_goal(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        300_000,
+        60_000,
+        10,
+    )
+    .unwrap();
+    assert!(driven.progress.is_complete());
+    drop(coord);
+    drop(agents);
+    let report = report("driven-stall", &path, 5, true).unwrap();
+    assert!(report.success);
+    assert_eq!(report.metrics.tasks_done, 2);
+    assert_eq!(report.metrics.lease_expiries, 1);
+    assert_eq!(report.metrics.reclaims, 1);
+}
+
+#[test]
+fn eval_driven_goal_discovery_latency() {
+    let path = temp_log("driven-latency");
+    let _ = std::fs::remove_file(&path);
+    let (mut coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    setup_team(&mut coord, &[1, 2], 1);
+    plan_pair(&mut coord, 10);
+    send(
+        &mut coord,
+        MsgSpec {
+            id: 1,
+            kind: MessageKind::Discovery,
+            sender: Actor::Agent {
+                agent_id: AgentId::new(2),
+            },
+            recipients: vec![1],
+            task: Some(1),
+            contract: None,
+            body: "api shape changed".to_string(),
+            at_ms: 50,
+        },
+    );
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> = vec![
+        (AgentId::new(1), Box::new(ScriptAdapter::ok_times(4))),
+        (AgentId::new(2), Box::new(ScriptAdapter::ok_times(4))),
+    ];
+    let driven = drive_goal(&mut coord, &mut agents, GoalId::new(10), 100, 60_000, 10).unwrap();
+    assert!(driven.progress.is_complete());
+    drop(coord);
+    drop(agents);
+    let report = report("driven-latency", &path, 5, true).unwrap();
+    assert!(report.success);
+    let latency = report.metrics.discovery_latency_avg_seqs.unwrap();
+    assert!(latency > 0.0);
+    assert_eq!(report.metrics.tasks_done, 2);
+}
