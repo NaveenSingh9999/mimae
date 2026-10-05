@@ -192,6 +192,25 @@ impl Router {
             .unwrap_or_default()
     }
 
+    pub fn drain_matching(&mut self, agent: AgentId, kinds: &[MessageKind]) -> Vec<QueuedMessage> {
+        match self.inboxes.get_mut(&agent) {
+            Some(queue) => {
+                let mut kept = VecDeque::with_capacity(queue.len());
+                let mut matched = Vec::new();
+                for queued in queue.drain(..) {
+                    if kinds.contains(&queued.message.kind) {
+                        matched.push(queued);
+                    } else {
+                        kept.push_back(queued);
+                    }
+                }
+                *queue = kept;
+                matched
+            }
+            None => Vec::new(),
+        }
+    }
+
     pub fn take_digest(&mut self, agent: AgentId) -> Option<Digest> {
         self.digests.remove(&agent).map(|items| Digest {
             owner: agent,

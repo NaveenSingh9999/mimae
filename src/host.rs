@@ -194,14 +194,13 @@ impl<H: HostHooks> Mimae<H> {
         agents.sort_by_key(|id| id.get());
         let mut out = Vec::new();
         for agent_id in agents {
-            for queued in self.coordinator.router_mut().drain(agent_id) {
-                if matches!(
-                    queued.message.kind,
-                    MessageKind::Escalation | MessageKind::Blocker
-                ) {
-                    self.hooks.on_escalation(&queued.message);
-                    out.push((agent_id, queued.message));
-                }
+            for queued in self
+                .coordinator
+                .router_mut()
+                .drain_matching(agent_id, &[MessageKind::Escalation, MessageKind::Blocker])
+            {
+                self.hooks.on_escalation(&queued.message);
+                out.push((agent_id, queued.message));
             }
         }
         out

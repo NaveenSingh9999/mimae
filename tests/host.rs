@@ -249,3 +249,57 @@ fn embed_escalation_reaches_host_hook() {
     assert_eq!(delivered[0].0, AgentId::new(1));
     assert_eq!(delivered[0].1.id, MessageId::new(9));
 }
+
+#[test]
+fn embed_drain_notifications_preserves_other_messages() {
+    let mut app = Mimae::open(temp_log("notify-keep"))
+        .unwrap()
+        .with_hooks(RecordingHooks::default());
+    app.create_team(
+        Team {
+            id: TeamId::new(1),
+            head: AgentId::new(1),
+            mode: TeamMode::Auto,
+            state: TeamState::Initializing,
+            members: vec![AgentId::new(1)],
+        },
+        1,
+    )
+    .unwrap();
+    app.register_agent(agent(1), Box::new(ScriptAdapter::default()), 2)
+        .unwrap();
+    app.mark_ready(AgentId::new(1), 3).unwrap();
+    for (id, kind, body) in [
+        (7u64, MessageKind::Discovery, "found something"),
+        (8u64, MessageKind::Blocker, "stuck here"),
+    ] {
+        app.send_message(
+            Message {
+                id: MessageId::new(id),
+                kind,
+                sender: Actor::Agent {
+                    agent_id: AgentId::new(1),
+                },
+                recipients: vec![AgentId::new(1)],
+                refs: MessageRefs {
+                    task_id: None,
+                    contract_id: None,
+                    decision_id: None,
+                },
+                priority: MessagePriority::High,
+                provenance: Actor::Agent {
+                    agent_id: AgentId::new(1),
+                },
+                body: body.into(),
+            },
+            100,
+        )
+        .unwrap();
+    }
+    let delivered = app.drain_notifications();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0].1.id, MessageId::new(8));
+    let remaining = app.coordinator().router().inbox(AgentId::new(1));
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].message.id, MessageId::new(7));
+}
