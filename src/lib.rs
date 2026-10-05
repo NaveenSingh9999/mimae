@@ -7,6 +7,7 @@ pub mod claude;
 pub mod context;
 pub mod coordinator;
 pub mod daemon;
+pub mod drive;
 pub mod entities;
 pub mod eval;
 pub mod event;
@@ -32,6 +33,7 @@ pub use claude::ClaudeAdapter;
 pub use context::{Brief, ContextError, ReviewContext, build_brief, build_review_context};
 pub use coordinator::{Coordinator, CoreError};
 pub use daemon::{handle_request, serve};
+pub use drive::{DriveError, DriveReport, TurnReport, drive_agent_turn, drive_goal};
 pub use entities::*;
 pub use eval::{
     Baseline, ScenarioMetrics, ScenarioReport, collect_metrics, compare_message_cost, report,
