@@ -90,3 +90,10 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - src/eval.rs: metrics collected purely by replaying the event log; baselines as coordination regimes over identical scripted tasks; cost comparison table.
 - tests/eval.rs: 12 scenarios. Notable verification: naive chat costs 40 messages vs 3 for Mimae on the same pair task; crash recovery loses zero tasks; milestone floods collapse to the 64-item digest cap.
 - During verification, found real flakiness: parallel tests sharing one log file collide on the single-writer flock. Fixed by per-test log files plus explicit drop-before-reopen; also fixed piped-exit-code masking in my own check commands.
+
+## Phase 9 — embedding
+
+- src/daemon.rs: JSON-RPC dispatcher with -32601/-32602/-32700/-32000 codes, Arc<Mutex<Coordinator>> threaded serve loop, poll-based events_since subscription, no new dependencies.
+- src/bin/mimae-daemon.rs: --port/--log arg parsing, replays log on open, prints protocol info to stderr.
+- README documents library/daemon/bindings order, full method table, and host responsibilities.
+- tests/daemon.rs (7). 101/101 total green, clippy -D warnings clean, fmt clean.
