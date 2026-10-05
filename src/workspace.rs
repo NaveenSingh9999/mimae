@@ -268,6 +268,13 @@ pub fn predict_overlaps(branches: &[(String, Vec<String>)]) -> Vec<Overlap> {
     out
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckOutcome {
+    Passed,
+    Failed,
+    TimedOut,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MergeOutcome {
     Merged,
@@ -365,13 +372,37 @@ impl IntegrationGate {
         dir: impl AsRef<Path>,
         program: &str,
         args: &[&str],
-    ) -> Result<bool, WorkspaceError> {
-        let status = Command::new(program)
+        timeout: std::time::Duration,
+    ) -> Result<CheckOutcome, WorkspaceError> {
+        use std::process::Stdio;
+        let mut child = Command::new(program)
             .args(args)
             .current_dir(dir.as_ref())
-            .status()
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
             .map_err(WorkspaceError::Io)?;
-        Ok(status.success())
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait().map_err(WorkspaceError::Io)? {
+                Some(status) => {
+                    return Ok(if status.success() {
+                        CheckOutcome::Passed
+                    } else {
+                        CheckOutcome::Failed
+                    });
+                }
+                None => {
+                    if start.elapsed() >= timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Ok(CheckOutcome::TimedOut);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+            }
+        }
     }
 
     pub fn advance(&self) -> Result<(), WorkspaceError> {

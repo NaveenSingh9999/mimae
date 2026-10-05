@@ -170,8 +170,16 @@ fn integration_gate_merges_clean_branch_and_advances() {
         gate.merge_branch(&dir, "feature/good").unwrap(),
         MergeOutcome::Merged
     );
-    assert!(gate.run_check(&dir, "true", &[]).unwrap());
-    assert!(!gate.run_check(&dir, "false", &[]).unwrap());
+    assert_eq!(
+        gate.run_check(&dir, "true", &[], std::time::Duration::from_secs(30))
+            .unwrap(),
+        CheckOutcome::Passed
+    );
+    assert_eq!(
+        gate.run_check(&dir, "false", &[], std::time::Duration::from_secs(30))
+            .unwrap(),
+        CheckOutcome::Failed
+    );
     gate.advance().unwrap();
     let head = Command::new("git")
         .arg("-C")
@@ -232,4 +240,24 @@ fn integration_gate_reports_conflicts_not_breakage() {
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&status.stdout).trim().is_empty());
+}
+
+#[test]
+fn hung_check_command_times_out_without_hanging() {
+    let repo = init_repo();
+    let gate = IntegrationGate::new(&repo, "main", "mimae-integration");
+    let dir = unique_dir("integ-timeout");
+    gate.prepare(&dir).unwrap();
+    let start = std::time::Instant::now();
+    assert_eq!(
+        gate.run_check(
+            &dir,
+            "sleep",
+            &["30"],
+            std::time::Duration::from_millis(300)
+        )
+        .unwrap(),
+        CheckOutcome::TimedOut
+    );
+    assert!(start.elapsed() < std::time::Duration::from_secs(10));
 }

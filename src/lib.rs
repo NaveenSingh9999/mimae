@@ -39,6 +39,6 @@ pub use planner::{
 pub use qwen::QwenAdapter;
 pub use team::{TeamError, TeamRegistry};
 pub use workspace::{
-    IntegrationGate, MergeOutcome, Overlap, PathConflict, PathLeaseRegistry, PathOwner,
-    WorkspaceError, WorkspaceManager, WorktreeInfo, predict_overlaps,
+    CheckOutcome, IntegrationGate, MergeOutcome, Overlap, PathConflict, PathLeaseRegistry,
+    PathOwner, WorkspaceError, WorkspaceManager, WorktreeInfo, predict_overlaps,
 };
