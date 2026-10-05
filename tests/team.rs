@@ -49,6 +49,7 @@ fn task_claim_moves_team_to_running() {
                 scope: WriteScope::default(),
                 expires_at_ms: 2,
                 last_heartbeat_ms: 1,
+                ttl_ms: 1,
             },
         }),
     )

@@ -371,3 +371,79 @@ fn rejected_publish_can_still_reopen() {
     let (_c, info) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
     assert_eq!(info.events, 1);
 }
+
+#[test]
+fn expired_leases_are_swept_by_coordinator() {
+    let path = temp_path("coord7.jsonl");
+    let mut coord = Coordinator::open(&path, EventLogOptions::default())
+        .unwrap()
+        .0;
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::TeamCreated { team: team() }),
+            vec![],
+            1,
+        )
+        .unwrap();
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::AgentRegistered { agent: agent(1) }),
+            vec![],
+            2,
+        )
+        .unwrap();
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::AgentReady {
+                agent_id: AgentId::new(1),
+            }),
+            vec![],
+            3,
+        )
+        .unwrap();
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::TaskCreated {
+                task: task(1, vec![]),
+            }),
+            vec![],
+            4,
+        )
+        .unwrap();
+    coord
+        .claim(
+            TaskId::new(1),
+            AgentId::new(1),
+            WriteScope::default(),
+            1_000,
+            2_000,
+        )
+        .unwrap();
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Claimed
+    );
+
+    let swept = coord.check_for_expired_leases(10_000).unwrap();
+    assert_eq!(swept, vec![(TaskId::new(1), AgentId::new(1))]);
+    let t = &coord.graph().tasks[&TaskId::new(1)];
+    assert_eq!(t.status, TaskStatus::Ready);
+    assert!(t.lease.is_none());
+    assert_eq!(coord.high_water_seq(), 6);
+
+    let swept = coord.check_for_expired_leases(20_000).unwrap();
+    assert!(swept.is_empty());
+    assert_eq!(coord.high_water_seq(), 6);
+
+    drop(coord);
+    let (coord2, info) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    assert_eq!(info.events, 6);
+    assert_eq!(
+        coord2.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Ready
+    );
+}

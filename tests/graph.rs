@@ -89,6 +89,7 @@ fn readiness_cascades_when_dependencies_complete() {
                     scope: WriteScope::default(),
                     expires_at_ms: 6_000,
                     last_heartbeat_ms: 1_000,
+                    ttl_ms: 5_000,
                 },
             },
         ))
@@ -216,6 +217,7 @@ fn claimed_task_sets_owner_and_status_and_is_idempotent() {
         scope: WriteScope::default(),
         expires_at_ms: 6_000,
         last_heartbeat_ms: 1_000,
+        ttl_ms: 5_000,
     };
     graph
         .apply(&event_of(
@@ -568,4 +570,54 @@ fn lease_expired_while_in_review_also_resets_to_ready() {
     assert_eq!(t.status, TaskStatus::Ready);
     assert!(t.owner.is_none());
     assert!(t.lease.is_none());
+}
+
+#[test]
+fn heartbeat_extends_lease_expiry_by_ttl() {
+    let mut graph = TaskGraph::new();
+    graph
+        .apply(&event_of(
+            1,
+            KnownPayload::AgentRegistered { agent: agent(1) },
+        ))
+        .unwrap();
+    graph
+        .apply(&event_of(
+            2,
+            KnownPayload::TaskCreated {
+                task: task(1, 10, vec![]),
+            },
+        ))
+        .unwrap();
+    graph
+        .claim(
+            TaskId::new(1),
+            AgentId::new(1),
+            WriteScope::default(),
+            1_000,
+            2_000,
+        )
+        .unwrap();
+    let before = graph.tasks[&TaskId::new(1)]
+        .lease
+        .as_ref()
+        .unwrap()
+        .expires_at_ms;
+    assert_eq!(before, 3_000);
+    graph
+        .apply(&event_of(
+            3,
+            KnownPayload::LeaseHeartbeat {
+                task_id: TaskId::new(1),
+                agent_id: AgentId::new(1),
+                at_ms: 2_500,
+            },
+        ))
+        .unwrap();
+    let after = graph.tasks[&TaskId::new(1)]
+        .lease
+        .as_ref()
+        .unwrap()
+        .expires_at_ms;
+    assert_eq!(after, 4_500);
 }

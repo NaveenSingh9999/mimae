@@ -169,6 +169,8 @@ impl TaskGraph {
                 match &mut task.lease {
                     Some(lease) if lease.owner == *agent_id => {
                         lease.last_heartbeat_ms = *at_ms;
+                        lease.expires_at_ms =
+                            lease.expires_at_ms.max(at_ms.saturating_add(lease.ttl_ms));
                     }
                     _ => {
                         return Err(FoldError::LeaseMismatch { task_id: *task_id });
@@ -290,6 +292,7 @@ impl TaskGraph {
             scope,
             expires_at_ms: now_ms.saturating_add(ttl_ms),
             last_heartbeat_ms: now_ms,
+            ttl_ms,
         };
         task.owner = Some(agent_id);
         task.lease = Some(lease.clone());

@@ -150,4 +150,39 @@ impl Coordinator {
             }
         }
     }
+
+    pub fn check_for_expired_leases(
+        &mut self,
+        now_ms: u64,
+    ) -> Result<Vec<(TaskId, AgentId)>, CoreError> {
+        let expired: Vec<(TaskId, AgentId)> = self
+            .graph()
+            .tasks
+            .values()
+            .filter_map(|task| match &task.lease {
+                Some(lease)
+                    if lease.expires_at_ms <= now_ms
+                        && task.status != crate::entities::TaskStatus::Done
+                        && task.status != crate::entities::TaskStatus::Failed
+                        && task.status != crate::entities::TaskStatus::Cancelled
+                        && task.status != crate::entities::TaskStatus::Abandoned =>
+                {
+                    Some((task.id, lease.owner))
+                }
+                _ => None,
+            })
+            .collect();
+        for (task_id, agent_id) in &expired {
+            self.publish(
+                Actor::System,
+                EventPayload::Known(KnownPayload::LeaseExpired {
+                    task_id: *task_id,
+                    agent_id: *agent_id,
+                }),
+                vec![],
+                now_ms,
+            )?;
+        }
+        Ok(expired)
+    }
 }

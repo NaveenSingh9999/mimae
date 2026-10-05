@@ -47,6 +47,7 @@ fn sample_lease() -> Lease {
         },
         expires_at_ms: 60_000,
         last_heartbeat_ms: 1_000,
+        ttl_ms: 60_000,
     }
 }
 

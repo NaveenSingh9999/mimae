@@ -170,6 +170,8 @@ pub struct Lease {
     pub scope: WriteScope,
     pub expires_at_ms: u64,
     pub last_heartbeat_ms: u64,
+    #[serde(default)]
+    pub ttl_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
