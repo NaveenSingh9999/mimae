@@ -11,6 +11,7 @@ pub mod drive;
 pub mod entities;
 pub mod eval;
 pub mod event;
+pub mod failures;
 pub mod graph;
 pub mod host;
 pub mod ids;
@@ -43,6 +44,9 @@ pub use eval::{
     Baseline, ScenarioMetrics, ScenarioReport, collect_metrics, compare_message_cost, report,
 };
 pub use event::{Event, EventPayload, KnownPayload, PROTOCOL_VERSION};
+pub use failures::{
+    CategoryCounts, FailureKind, FailureTag, MastCategory, summarize, tag_failures,
+};
 pub use graph::{ClaimError, FoldError, TaskGraph};
 pub use host::{HostHooks, Mimae, NoHooks};
 pub use ids::*;
