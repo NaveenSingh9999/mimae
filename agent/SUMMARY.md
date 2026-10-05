@@ -34,3 +34,9 @@
 - `src/failures.rs` closes brief §13.2/F3: every log-detectable failure is tagged with its MAST category (Specification / Misalignment / Verification) so eval reports say *how* a run failed.
 - `tag_failures(&store)` is read-only and deterministic; `summarize` gives per-category counts. Runaway cost is the one §9.8 row without a log signal — classified, never auto-detected, documented.
 - `tests/failures.rs` (12). 133/133 total green, clippy/fmt clean. Committed `da28184`.
+
+## Gate promotion thresholds (D23)
+
+- Eval metrics are now pass/fail rules: `PromotionGate::check(report, tags)` returns violations, empty means promoted. All 15 scenarios declare gates; recovery allowances are deliberate per-scenario constants, never silent.
+- Cross-baseline promotion: Mimae must beat naive-chat message volume to promote.
+- `tests/promotion.rs` (8). 141/141 green, clippy/fmt clean. Committed `8dc6587`.

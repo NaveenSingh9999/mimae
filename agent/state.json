@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae \u2014 Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "MAST failure tagging done (D22); 133 tests green",
+  "status": "Gate promotion thresholds done (D23); 141 tests green",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -29,7 +29,8 @@
     "Framework embedding: src/host.rs \u2014 Mimae<H: HostHooks> facade (open/register_agent/create_team/mark_ready/submit_goal/drive/open_gate/record_artifact/propose_contract/record_decision/send_message/poll_approvals/drain_notifications/drain_events/claim_for_task) with NoHooks default; README + D21. tests/host.rs (2) full embed flow incl. approval hook and escalation delivery. 116 tests total, clippy/fmt clean.",
     "Head loop: src/drive.rs \u2014 drive_head with HeadConfig (max_rounds, stuck_threshold, per-agent token budget), TurnReport.tokens_used from Usage events, early exit on consecutive idle rounds, stalled/over-budget/failed_tasks reporting; drive_goal untouched. tests/drive.rs (4 new). 120 tests total, clippy/fmt clean.",
     "Review fix e426057: drain_notifications no longer destroys non-escalation inbox messages (new Router::drain_matching + regression test). 121 tests green, clippy/fmt clean.",
-    "MAST failure tagging (Phase 8 follow-up, D22): src/failures.rs \u2014 FailureKind (9 modes) onto MastCategory::{Specification,Misalignment,Verification}; read-only tag_failures scan over EventStore; tests/failures.rs (12). 133 tests green, clippy/fmt clean, commit da28184."
+    "MAST failure tagging (Phase 8 follow-up, D22): src/failures.rs \u2014 FailureKind (9 modes) onto MastCategory::{Specification,Misalignment,Verification}; read-only tag_failures scan over EventStore; tests/failures.rs (12). 133 tests green, clippy/fmt clean, commit da28184.",
+    "Gate promotion thresholds (Phase 8 follow-up, D23): PromotionGate in src/eval.rs \u2014 per-scenario pass/fail thresholds over ScenarioReport + FailureTags; every eval scenario declares its gate (strict for clean runs, explicit allowances for recovery scenarios); baselines gate Mimae against naive-chat volume. tests/promotion.rs (8). 141 tests green, clippy/fmt clean, commit 8dc6587."
   ],
   "open_blockers": [
     "Remaining OPEN: Antigravity/Qwen/Mimo live conformance; Mimo envelope/session-id fields"

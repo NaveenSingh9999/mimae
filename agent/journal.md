@@ -124,3 +124,9 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - New `src/failures.rs`: `FailureKind` (AgentCrash, AgentStuck, LeaseExpired, PromptInjection, DecisionConflict, DuplicateWork, TaskFailed, GateFailed, IntegrationFailed) mapped onto the three MAST categories; `tag_failures` is a read-only scan over any `EventStore`; `summarize` rolls tags into `CategoryCounts`.
 - Detectors: Dead agent, Blocked task, LeaseExpired event, Failed task, failed-by-2+-owners (duplicate work), failed gate (+integration-failed for Tests/Oracle), injection markers via the router detector, contract change under active parties. Runaway cost classified but undetectable (no cost events) — documented in-module.
 - `tests/failures.rs` (12). 133/133 total green, clippy -D warnings clean, fmt clean. Committed `da28184`.
+
+## Gate promotion thresholds (D23)
+
+- `PromotionGate` in `src/eval.rs`: thresholds over `ScenarioReport` + `FailureTag`s (success, tasks_failed, human_interventions, lease_expiries, reclaims, message cap, discovery-latency cap, per-MAST-category tag caps); `check` returns `Vec<Violation>`, empty means promoted.
+- Every eval scenario declares its gate via `assert_gate` (re-opens log, tags, checks): strict for clean runs; explicit allowances where the scenario exercises the failure (heartbeat/crash/driven-stall 1+1+1, convoy 3+3+3, reviewer-cap 3 verification, injection 1 spec + 1-message cap, flood 100-message cap, latency 100-seq tripwire). Baselines: solo/naive strict, mimae must beat naive volume.
+- `tests/promotion.rs` (8 unit tests). 141/141 total green, clippy -D warnings clean, fmt clean. Committed `8dc6587`.
