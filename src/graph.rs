@@ -1,8 +1,9 @@
 use crate::entities::{
-    Agent, AgentState, Contract, ContractStatus, Lease, Task, TaskStatus, WriteScope,
+    Agent, AgentState, Contract, ContractStatus, Decision, Goal, Lease, Task, TaskStatus,
+    WriteScope,
 };
 use crate::event::{Event, EventPayload, KnownPayload};
-use crate::ids::{AgentId, ContractId, TaskId};
+use crate::ids::{AgentId, ContractId, DecisionId, GoalId, TaskId};
 use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -63,6 +64,10 @@ pub enum FoldError {
         expected: u32,
         got: u32,
     },
+    #[error("duplicate goal {0}")]
+    DuplicateGoal(GoalId),
+    #[error("duplicate decision {0}")]
+    DuplicateDecision(DecisionId),
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -114,6 +119,8 @@ pub struct TaskGraph {
     pub tasks: HashMap<TaskId, Task>,
     pub agents: HashMap<AgentId, Agent>,
     pub contracts: HashMap<ContractId, Contract>,
+    pub goals: HashMap<GoalId, Goal>,
+    pub decisions: Vec<Decision>,
 }
 
 impl TaskGraph {
@@ -126,6 +133,12 @@ impl TaskGraph {
             return Ok(());
         };
         match known {
+            KnownPayload::GoalSubmitted { goal } => {
+                if self.goals.contains_key(&goal.id) {
+                    return Err(FoldError::DuplicateGoal(goal.id));
+                }
+                self.goals.insert(goal.id, goal.clone());
+            }
             KnownPayload::TaskCreated { task } => {
                 if self.tasks.contains_key(&task.id) {
                     return Err(FoldError::DuplicateTask(task.id));
@@ -248,6 +261,12 @@ impl TaskGraph {
                 {
                     return Err(FoldError::MessageTooLong { len, limit });
                 }
+            }
+            KnownPayload::DecisionRecorded { decision } => {
+                if self.decisions.iter().any(|d| d.id == decision.id) {
+                    return Err(FoldError::DuplicateDecision(decision.id));
+                }
+                self.decisions.push(decision.clone());
             }
             KnownPayload::ContractProposed { contract } => {
                 if self.contracts.contains_key(&contract.id) {

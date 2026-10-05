@@ -4,6 +4,7 @@ pub mod actor;
 pub mod adapter;
 pub mod antigravity;
 pub mod claude;
+pub mod context;
 pub mod coordinator;
 pub mod entities;
 pub mod event;
@@ -14,6 +15,7 @@ pub mod mimo;
 pub mod opencode;
 pub mod planner;
 pub mod qwen;
+pub mod router;
 pub mod team;
 pub mod workspace;
 
@@ -24,6 +26,7 @@ pub use adapter::{
 };
 pub use antigravity::{AntigravityAdapter, parse_agy_stream_line};
 pub use claude::ClaudeAdapter;
+pub use context::{Brief, ContextError, ReviewContext, build_brief, build_review_context};
 pub use coordinator::{Coordinator, CoreError};
 pub use entities::*;
 pub use event::{Event, EventPayload, KnownPayload, PROTOCOL_VERSION};
@@ -37,6 +40,9 @@ pub use planner::{
     change_contract, goal_progress, next_assignment, plan_goal, propose_contract, record_decision,
 };
 pub use qwen::QwenAdapter;
+pub use router::{
+    DeliveryTier, Digest, QueuedMessage, RouteError, RouteOutcome, Router, RouterConfig,
+};
 pub use team::{TeamError, TeamRegistry};
 pub use workspace::{
     CheckOutcome, IntegrationGate, MergeOutcome, Overlap, PathConflict, PathLeaseRegistry,

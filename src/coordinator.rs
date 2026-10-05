@@ -4,6 +4,7 @@ use crate::event::{Event, EventPayload, KnownPayload};
 use crate::graph::{ClaimError, FoldError, TaskGraph};
 use crate::ids::{AgentId, TaskId};
 use crate::log::{EventLog, EventLogOptions, EventStore, LogError, OpenInfo};
+use crate::router::{RouteError, Router, RouterConfig};
 use crate::team::{TeamError, TeamRegistry};
 use std::path::Path;
 
@@ -17,12 +18,15 @@ pub enum CoreError {
     Team(#[from] TeamError),
     #[error("claim error: {0}")]
     Claim(#[from] ClaimError),
+    #[error("route error: {0}")]
+    Route(#[from] RouteError),
 }
 
 pub struct Coordinator {
     log: EventLog,
     graph: TaskGraph,
     team: TeamRegistry,
+    router: Router,
 }
 
 impl Coordinator {
@@ -35,9 +39,18 @@ impl Coordinator {
             log,
             graph: TaskGraph::new(),
             team: TeamRegistry::new(),
+            router: Router::new(RouterConfig::default()),
         };
         coordinator.rebuild_views()?;
         Ok((coordinator, info))
+    }
+
+    pub fn router(&self) -> &Router {
+        &self.router
+    }
+
+    pub fn router_mut(&mut self) -> &mut Router {
+        &mut self.router
     }
 
     pub fn graph(&self) -> &TaskGraph {
@@ -59,12 +72,20 @@ impl Coordinator {
     fn rebuild_views(&mut self) -> Result<(), CoreError> {
         self.graph = TaskGraph::new();
         self.team = TeamRegistry::new();
+        self.router = Router::new(RouterConfig::default());
         let mut stream = self.log.stream()?;
         loop {
             match stream.next() {
                 Some(Ok(event)) => {
                     self.graph.apply(&event)?;
                     self.team.apply(&event)?;
+                    if let EventPayload::Known(KnownPayload::MessageSent { message }) =
+                        &event.payload
+                    {
+                        self.router
+                            .ingest(&self.graph, message, event.at_ms)
+                            .map_err(CoreError::Route)?;
+                    }
                 }
                 Some(Err(err)) => return Err(CoreError::Log(err)),
                 None => break,
@@ -87,6 +108,12 @@ impl Coordinator {
         if let Err(err) = self.team.apply(&event) {
             self.rebuild_views()?;
             return Err(CoreError::Team(err));
+        }
+        if let EventPayload::Known(KnownPayload::MessageSent { message }) = &event.payload
+            && let Err(err) = self.router.ingest(&self.graph, message, event.at_ms)
+        {
+            self.rebuild_views()?;
+            return Err(CoreError::Route(err));
         }
         match self.log.append(
             event.actor,
