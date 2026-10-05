@@ -40,3 +40,8 @@
 - Eval metrics are now pass/fail rules: `PromotionGate::check(report, tags)` returns violations, empty means promoted. All 15 scenarios declare gates; recovery allowances are deliberate per-scenario constants, never silent.
 - Cross-baseline promotion: Mimae must beat naive-chat message volume to promote.
 - `tests/promotion.rs` (8). 141/141 green, clippy/fmt clean. Committed `8dc6587`.
+
+## Phase 9 (D24)
+
+- Protocol version negotiation enforced on the daemon socket; sample ADE host example runs offline; first language binding (Node) drives a full coordination loop from JS and passes.
+- 144/144 green, clippy/fmt clean workspace-wide. Committed `1f34ff3`.

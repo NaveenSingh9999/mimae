@@ -130,3 +130,10 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - `PromotionGate` in `src/eval.rs`: thresholds over `ScenarioReport` + `FailureTag`s (success, tasks_failed, human_interventions, lease_expiries, reclaims, message cap, discovery-latency cap, per-MAST-category tag caps); `check` returns `Vec<Violation>`, empty means promoted.
 - Every eval scenario declares its gate via `assert_gate` (re-opens log, tags, checks): strict for clean runs; explicit allowances where the scenario exercises the failure (heartbeat/crash/driven-stall 1+1+1, convoy 3+3+3, reviewer-cap 3 verification, injection 1 spec + 1-message cap, flood 100-message cap, latency 100-seq tripwire). Baselines: solo/naive strict, mimae must beat naive volume.
 - `tests/promotion.rs` (8 unit tests). 141/141 total green, clippy -D warnings clean, fmt clean. Committed `8dc6587`.
+
+## Phase 9 (D24)
+
+- Daemon negotiation: `mimae.negotiate{protocol, client}` exact-match (v1), `-32001` mismatch, `-32002` transport gate on pre-negotiation calls (`hello` stays open); `handle_request` ungated for in-process use. 3 new daemon tests (accept/reject/socket-gate), README protocol table updated.
+- `examples/sample_ade.rs`: minimal host over `Mimae` facade — team-first ordering (register-before-team fails `NotInitialized`), drive 2/2, human gate auto-approved via hooks, 20 events subscribed. Runs offline.
+- `bindings/node`: napi-rs crate (workspace member), JSON-string `Coordinator` surface (open/close/publish/claim/plan_goal/assign/goal_progress/events_since/sweep_expired); u64 crosses as BigInt (napi-rs refuses lossy Number), needs `napi6` feature; poisoned registry mutex recovers. `test.js` drives a full loop from JS: 20 events, goal 2/2, error paths verified.
+- 144/144 green, clippy -D warnings + fmt clean workspace-wide. Committed `1f34ff3`.
