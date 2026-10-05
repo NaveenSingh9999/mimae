@@ -112,3 +112,9 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 
 - src/host.rs: Mimae facade owning Coordinator + per-agent adapters; with_hooks transition; poll_approvals answers pending Human gates via hook; drain_notifications surfaces Escalation/Blocker to hook; drain_events replays to hook; send_message added after test exposed the gap.
 - README + D21. tests/host.rs (2). 116/116 total green, clippy -D warnings clean, fmt clean.
+
+## Head auto-assignment loop
+
+- src/drive.rs: drive_head wraps drive_agent_turn with token budgets (Usage events accumulated per agent, over-budget agents skipped), per-agent idle streaks with stuck_threshold flagging, early exit on consecutive fully-idle rounds, failed-task collection. TurnReport now carries tokens_used.
+- Design fix during verification: breaking on the first idle round made the stuck threshold unreachable; consecutive-idle-round counting keeps both mechanisms coherent.
+- tests/drive.rs (4 new). 120/120 total green, clippy -D warnings clean, fmt clean.

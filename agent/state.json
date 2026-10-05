@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "Framework facade done; 116 tests green",
+  "status": "Head auto-assignment loop done; 120 tests green",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -26,7 +26,8 @@
     "Phase 9: src/daemon.rs — newline-delimited JSON-RPC 2.0 dispatcher (17 methods) + threaded TCP serve loop on 127.0.0.1; src/bin/mimae-daemon.rs thin binary (--port/--log); Coordinator::events_since for poll subscription; PlanReceipt/GoalProgress now Serialize; README embedding section with protocol table; D20. tests/daemon.rs (7: dispatcher unit + live socket roundtrip). 101 tests total, clippy/fmt clean.",
     "Head drive loop: src/drive.rs — drive_agent_turn (sweep, capability assign, adapter turn, advance to Done / mark Failed) and drive_goal (round-robin until complete or round cap) over &mut dyn AgentAdapter with caller clock. tests/drive.rs (4) with scripted adapter. 105 tests total, clippy/fmt clean.",
     "Eval follow-up: 3 driven-goal scenarios in tests/eval.rs running drive_goal end-to-end with scripted adapters (two-agent completion, stall-then-reclaim with lease expiry + reclaim metrics, discovery message with measured seq latency). 114 tests total, clippy/fmt clean.",
-    "Framework embedding: src/host.rs — Mimae<H: HostHooks> facade (open/register_agent/create_team/mark_ready/submit_goal/drive/open_gate/record_artifact/propose_contract/record_decision/send_message/poll_approvals/drain_notifications/drain_events/claim_for_task) with NoHooks default; README + D21. tests/host.rs (2) full embed flow incl. approval hook and escalation delivery. 116 tests total, clippy/fmt clean."
+    "Framework embedding: src/host.rs — Mimae<H: HostHooks> facade (open/register_agent/create_team/mark_ready/submit_goal/drive/open_gate/record_artifact/propose_contract/record_decision/send_message/poll_approvals/drain_notifications/drain_events/claim_for_task) with NoHooks default; README + D21. tests/host.rs (2) full embed flow incl. approval hook and escalation delivery. 116 tests total, clippy/fmt clean.",
+    "Head loop: src/drive.rs — drive_head with HeadConfig (max_rounds, stuck_threshold, per-agent token budget), TurnReport.tokens_used from Usage events, early exit on consecutive idle rounds, stalled/over-budget/failed_tasks reporting; drive_goal untouched. tests/drive.rs (4 new). 120 tests total, clippy/fmt clean."
   ],
   "open_blockers": [
     "Remaining OPEN: Antigravity/Qwen/Mimo live conformance; Mimo envelope/session-id fields"
