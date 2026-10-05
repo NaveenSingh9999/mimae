@@ -77,3 +77,10 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - src/context.rs: curated briefs (task + scope + goal acceptance + relevant contracts + decision digest + peer ownership, never peer histories), clean-context reviews, digest rendering, byte-budget test.
 - TaskGraph folds GoalSubmitted/DecisionRecorded; Router owned by Coordinator, fed on every MessageSent publish and rebuilt identically on reopen (tested).
 - tests/router.rs (9) + tests/context.rs (4). 82/82 total green, clippy -D warnings clean, fmt clean.
+
+## Phase 7 — verification/security
+
+- Artifact/Gate entities + three events folded with strict version/duplicate/double-decide rules; artifacts support status-only updates.
+- Gate lifecycle helpers with reviewer loop cap; verification_status labels Verified/Unverified/Failed per task requirement.
+- Deterministic injection-marker quarantine at router ingest (logged, never delivered); replay preserves quarantine.
+- tests/verify.rs (6). 75/75 total green, clippy -D warnings clean, fmt clean.
