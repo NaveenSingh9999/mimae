@@ -218,7 +218,7 @@ impl Drop for ClaudeAdapter {
     }
 }
 
-fn extract_session_id(ev: &SessionEvent) -> Option<String> {
+pub fn extract_session_id(ev: &SessionEvent) -> Option<String> {
     if let SessionEvent::Ok { payload } = ev
         && payload.starts_with("session ")
     {
