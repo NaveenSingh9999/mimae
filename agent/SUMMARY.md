@@ -28,3 +28,9 @@
 7. Step 7: Claude Code T2 headless JSON/stream-json adapter + hooks (code-ready, live conformance later on a box with claude installed)
 8. Step 8: Antigravity CLI adapter after verifying its driver surface
 9. Step 9: gate4agent prior-art evaluation (D3)
+
+## MAST failure tagging (D22)
+
+- `src/failures.rs` closes brief §13.2/F3: every log-detectable failure is tagged with its MAST category (Specification / Misalignment / Verification) so eval reports say *how* a run failed.
+- `tag_failures(&store)` is read-only and deterministic; `summarize` gives per-category counts. Runaway cost is the one §9.8 row without a log signal — classified, never auto-detected, documented.
+- `tests/failures.rs` (12). 133/133 total green, clippy/fmt clean. Committed `da28184`.

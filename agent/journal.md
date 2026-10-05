@@ -118,3 +118,9 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - src/drive.rs: drive_head wraps drive_agent_turn with token budgets (Usage events accumulated per agent, over-budget agents skipped), per-agent idle streaks with stuck_threshold flagging, early exit on consecutive fully-idle rounds, failed-task collection. TurnReport now carries tokens_used.
 - Design fix during verification: breaking on the first idle round made the stuck threshold unreachable; consecutive-idle-round counting keeps both mechanisms coherent.
 - tests/drive.rs (4 new). 120/120 total green, clippy -D warnings clean, fmt clean.
+
+## MAST failure tagging (D22)
+
+- New `src/failures.rs`: `FailureKind` (AgentCrash, AgentStuck, LeaseExpired, PromptInjection, DecisionConflict, DuplicateWork, TaskFailed, GateFailed, IntegrationFailed) mapped onto the three MAST categories; `tag_failures` is a read-only scan over any `EventStore`; `summarize` rolls tags into `CategoryCounts`.
+- Detectors: Dead agent, Blocked task, LeaseExpired event, Failed task, failed-by-2+-owners (duplicate work), failed gate (+integration-failed for Tests/Oracle), injection markers via the router detector, contract change under active parties. Runaway cost classified but undetectable (no cost events) — documented in-module.
+- `tests/failures.rs` (12). 133/133 total green, clippy -D warnings clean, fmt clean. Committed `da28184`.
