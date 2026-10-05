@@ -209,10 +209,10 @@ impl TaskGraph {
                 if agent.state != *from {
                     return Err(FoldError::AgentStateMismatch {
                         agent_id: *agent_id,
-                        actual: agent.state.clone(),
+                        actual: agent.state,
                     });
                 }
-                agent.state = to.clone();
+                agent.state = *to;
             }
             KnownPayload::MessageSent { message } => {
                 if let Err(crate::entities::MessageError::BodyTooLong { len, limit }) =
