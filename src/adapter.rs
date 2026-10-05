@@ -83,3 +83,59 @@ pub trait AgentAdapter {
         None
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TurnOutcome {
+    pub exited: bool,
+    pub timed_out: bool,
+    pub success: bool,
+}
+
+pub fn run_bounded_turn(
+    child: &mut std::process::Child,
+    reader: impl std::io::BufRead + Send + 'static,
+    timeout: Duration,
+    mut on_line: impl FnMut(&str),
+) -> TurnOutcome {
+    let mut outcome = TurnOutcome {
+        exited: false,
+        timed_out: false,
+        success: false,
+    };
+    std::thread::scope(|s| {
+        let reader_handle = s.spawn(|| {
+            let mut lines = Vec::new();
+            for line in reader.lines() {
+                match line {
+                    Ok(line) => lines.push(line),
+                    Err(_) => break,
+                }
+            }
+            lines
+        });
+        let start = std::time::Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    outcome.exited = true;
+                    outcome.success = status.success();
+                    break;
+                }
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        outcome.timed_out = true;
+                        let _ = child.kill();
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => break,
+            }
+        }
+        let _ = child.wait();
+        for line in reader_handle.join().unwrap_or_default() {
+            on_line(&line);
+        }
+    });
+    outcome
+}

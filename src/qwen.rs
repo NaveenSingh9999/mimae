@@ -115,37 +115,42 @@ impl AgentAdapter for QwenAdapter {
                 };
                 self.child = Some(child);
                 let mut result: Vec<SessionEvent> = Vec::new();
-                let mut buf = String::new();
-                use std::io::BufRead;
-                let mut reader = std::io::BufReader::new(stdout);
                 let mut final_id: Option<String> = None;
-                loop {
-                    buf.clear();
-                    match reader.read_line(&mut buf) {
-                        Ok(0) => break,
-                        Ok(_) => {
-                            for ev in crate::claude::parse_stream_line(buf.trim()) {
+                let timeout = self.timeout;
+                let outcome = match self.child.as_mut() {
+                    Some(stored) => crate::adapter::run_bounded_turn(
+                        stored,
+                        std::io::BufReader::new(stdout),
+                        timeout,
+                        |line| {
+                            for ev in crate::claude::parse_stream_line(line.trim()) {
                                 if let Some(id) = crate::claude::extract_session_id(&ev) {
                                     final_id = Some(id);
                                 }
                                 result.push(ev);
                             }
-                        }
-                        Err(_) => break,
-                    }
-                }
-                let ended = {
-                    if let Some(mut c) = self.child.take() {
-                        match c.wait() {
-                            Ok(status) => status.success(),
-                            Err(_) => false,
-                        }
-                    } else {
-                        false
+                        },
+                    ),
+                    None => {
+                        return vec![
+                            SessionEvent::Error {
+                                message: "session lost".into(),
+                            },
+                            SessionEvent::TurnComplete { ok: false },
+                        ];
                     }
                 };
+                self.child = None;
                 if let Some(id) = final_id {
                     self.session_id = Some(id);
+                }
+                if outcome.timed_out {
+                    result.push(SessionEvent::Error {
+                        message: format!("turn timed out after {}s", timeout.as_secs()),
+                    });
+                    result.push(SessionEvent::TurnComplete { ok: false });
+                    self.state = AgentState::Dead;
+                    return result;
                 }
                 if result
                     .last()
@@ -160,8 +165,10 @@ impl AgentAdapter for QwenAdapter {
                         };
                     return result;
                 }
-                result.push(SessionEvent::TurnComplete { ok: ended });
-                self.state = if ended {
+                result.push(SessionEvent::TurnComplete {
+                    ok: outcome.success,
+                });
+                self.state = if outcome.success {
                     AgentState::Idle
                 } else {
                     AgentState::Dead

@@ -105,37 +105,42 @@ impl AgentAdapter for ClaudeAdapter {
                 };
                 self.child = Some(child);
                 let mut result: Vec<SessionEvent> = Vec::new();
-                let mut buf = String::new();
-                use std::io::BufRead;
-                let mut reader = std::io::BufReader::new(stdout);
                 let mut final_id: Option<String> = None;
-                loop {
-                    buf.clear();
-                    match reader.read_line(&mut buf) {
-                        Ok(0) => break,
-                        Ok(_) => {
-                            for ev in parse_stream_line(buf.trim()) {
+                let timeout = self.timeout;
+                let outcome = match self.child.as_mut() {
+                    Some(stored) => crate::adapter::run_bounded_turn(
+                        stored,
+                        std::io::BufReader::new(stdout),
+                        timeout,
+                        |line| {
+                            for ev in parse_stream_line(line.trim()) {
                                 if let Some(id) = extract_session_id(&ev) {
                                     final_id = Some(id);
                                 }
                                 result.push(ev);
                             }
-                        }
-                        Err(_) => break,
-                    }
-                }
-                let ended = {
-                    if let Some(mut c) = self.child.take() {
-                        match c.wait() {
-                            Ok(status) => status.success(),
-                            Err(_) => false,
-                        }
-                    } else {
-                        false
+                        },
+                    ),
+                    None => {
+                        return vec![
+                            SessionEvent::Error {
+                                message: "session lost".into(),
+                            },
+                            SessionEvent::TurnComplete { ok: false },
+                        ];
                     }
                 };
+                self.child = None;
                 if let Some(id) = final_id {
                     self.session_id = Some(id);
+                }
+                if outcome.timed_out {
+                    result.push(SessionEvent::Error {
+                        message: format!("turn timed out after {}s", timeout.as_secs()),
+                    });
+                    result.push(SessionEvent::TurnComplete { ok: false });
+                    self.state = AgentState::Dead;
+                    return result;
                 }
                 if let Some(last) = result.last() {
                     if matches!(last, SessionEvent::TurnComplete { .. }) {
@@ -143,8 +148,10 @@ impl AgentAdapter for ClaudeAdapter {
                         return result;
                     }
                 }
-                result.push(SessionEvent::TurnComplete { ok: ended });
-                self.state = if ended {
+                result.push(SessionEvent::TurnComplete {
+                    ok: outcome.success,
+                });
+                self.state = if outcome.success {
                     AgentState::Idle
                 } else {
                     AgentState::Dead
@@ -280,31 +287,31 @@ pub fn parse_stream_line(line: &str) -> Vec<SessionEvent> {
         }
         "result" => {
             let subtype = v.get("subtype").and_then(|s| s.as_str()).unwrap_or("");
-            match subtype {
-                "success" => {
-                    if let Some(usage) = v.get("usage") {
-                        let inp = usage
-                            .get("input_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        let outp = usage
-                            .get("output_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0);
-                        out.push(SessionEvent::Usage {
-                            input_tokens: inp,
-                            output_tokens: outp,
-                        });
-                    }
-                    out.push(SessionEvent::TurnComplete { ok: true });
-                }
-                _ => {
-                    let msg = v.get("error").and_then(|e| e.as_str()).unwrap_or("error");
-                    out.push(SessionEvent::Error {
-                        message: msg.to_string(),
+            let flagged_error = v.get("is_error").and_then(|e| e.as_bool()).unwrap_or(false);
+            let message = v.get("error").and_then(|e| e.as_str());
+            let ok =
+                subtype == "success" || (subtype.is_empty() && !flagged_error && message.is_none());
+            if ok {
+                if let Some(usage) = v.get("usage") {
+                    let inp = usage
+                        .get("input_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let outp = usage
+                        .get("output_tokens")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    out.push(SessionEvent::Usage {
+                        input_tokens: inp,
+                        output_tokens: outp,
                     });
-                    out.push(SessionEvent::TurnComplete { ok: false });
                 }
+                out.push(SessionEvent::TurnComplete { ok: true });
+            } else {
+                out.push(SessionEvent::Error {
+                    message: message.unwrap_or("error").to_string(),
+                });
+                out.push(SessionEvent::TurnComplete { ok: false });
             }
         }
         "stream_event" => {

@@ -213,21 +213,7 @@ impl EventStore for EventLog {
     }
 
     fn events(&self) -> Result<Vec<Event>, LogError> {
-        let file = File::open(&self.path)?;
-        let reader = BufReader::new(file);
-        let mut out = Vec::new();
-        for (i, line) in reader.lines().enumerate() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let event: Event = serde_json::from_str(&line).map_err(|source| LogError::Corrupt {
-                line: i + 1,
-                source,
-            })?;
-            out.push(event);
-        }
-        Ok(out)
+        self.stream()?.collect()
     }
 
     fn stream(&self) -> Result<EventStream, LogError> {

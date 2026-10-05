@@ -120,54 +120,63 @@ impl AgentAdapter for AntigravityAdapter {
                 };
                 self.child = Some(child);
                 let mut events: Vec<SessionEvent> = Vec::new();
-                use std::io::BufRead;
-                let mut reader = std::io::BufReader::new(stdout);
-                let mut buf = String::new();
                 let mut session_id: Option<String> = None;
                 let mut success = false;
-                loop {
-                    buf.clear();
-                    match reader.read_line(&mut buf) {
-                        Ok(0) => break,
-                        Ok(_) => match serde_json::from_str::<serde_json::Value>(buf.trim()) {
-                            Ok(v) => {
-                                let parsed = parse_agy_json_value(&v);
-                                if session_id.is_none() {
-                                    if let Some(id) = extract_agy_conversation_id(&v) {
+                let timeout = self.timeout;
+                let outcome = match self.child.as_mut() {
+                    Some(stored) => crate::adapter::run_bounded_turn(
+                        stored,
+                        std::io::BufReader::new(stdout),
+                        timeout,
+                        |line| {
+                            let trimmed = line.trim();
+                            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                                Ok(v) => {
+                                    let parsed = parse_agy_json_value(&v);
+                                    if session_id.is_none()
+                                        && let Some(id) = extract_agy_conversation_id(&v)
+                                    {
                                         session_id = Some(id);
                                     }
-                                }
-                                for ev in parsed {
-                                    if matches!(ev, SessionEvent::TurnComplete { ok: true }) {
-                                        success = true;
+                                    for ev in parsed {
+                                        if matches!(ev, SessionEvent::TurnComplete { ok: true }) {
+                                            success = true;
+                                        }
+                                        events.push(ev);
                                     }
-                                    events.push(ev);
                                 }
-                            }
-                            Err(_) => {
-                                if !buf.trim().is_empty() {
-                                    events.push(SessionEvent::Ok {
-                                        payload: buf.trim().to_string(),
-                                    });
+                                Err(_) => {
+                                    if !trimmed.is_empty() {
+                                        events.push(SessionEvent::Ok {
+                                            payload: trimmed.to_string(),
+                                        });
+                                    }
                                 }
                             }
                         },
-                        Err(_) => break,
-                    }
-                }
-                let wait_ok = {
-                    if let Some(mut c) = self.child.take() {
-                        match c.wait() {
-                            Ok(status) => status.success(),
-                            Err(_) => false,
-                        }
-                    } else {
-                        false
+                    ),
+                    None => {
+                        return vec![
+                            SessionEvent::Error {
+                                message: "session lost".into(),
+                            },
+                            SessionEvent::TurnComplete { ok: false },
+                        ];
                     }
                 };
+                self.child = None;
                 if let Some(id) = session_id {
                     self.session_id = Some(id);
                 }
+                if outcome.timed_out {
+                    events.push(SessionEvent::Error {
+                        message: format!("turn timed out after {}s", timeout.as_secs()),
+                    });
+                    events.push(SessionEvent::TurnComplete { ok: false });
+                    self.state = AgentState::Dead;
+                    return events;
+                }
+                let wait_ok = outcome.success;
                 if events
                     .last()
                     .map(|ev| matches!(ev, SessionEvent::TurnComplete { .. }))

@@ -17,7 +17,10 @@ pub mod qwen;
 pub mod team;
 
 pub use actor::Actor;
-pub use adapter::{AdapterCapabilities, AgentAdapter, SessionEvent, SessionReply, TransportMode};
+pub use adapter::{
+    AdapterCapabilities, AgentAdapter, SessionEvent, SessionReply, TransportMode, TurnOutcome,
+    run_bounded_turn,
+};
 pub use antigravity::{AntigravityAdapter, parse_agy_stream_line};
 pub use claude::ClaudeAdapter;
 pub use coordinator::{Coordinator, CoreError};

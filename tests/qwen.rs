@@ -21,6 +21,34 @@ fn qwen_parser_reuses_claude_stream() {
 }
 
 #[test]
+fn qwen_result_without_subtype_uses_is_error_flag() {
+    let ok_line = r#"{"type":"result","is_error":false,"result":"done","usage":{"input_tokens":7,"output_tokens":2}}"#;
+    let evs = claude::parse_stream_line(ok_line);
+    assert!(evs.iter().any(|e| matches!(
+        e,
+        SessionEvent::Usage {
+            input_tokens: 7,
+            output_tokens: 2
+        }
+    )));
+    assert!(matches!(
+        evs.last(),
+        Some(SessionEvent::TurnComplete { ok: true })
+    ));
+
+    let err_line = r#"{"type":"result","is_error":true,"error":"boom"}"#;
+    let evs = claude::parse_stream_line(err_line);
+    assert!(evs.iter().any(|e| matches!(
+        e,
+        SessionEvent::Error { message } if message == "boom"
+    )));
+    assert!(matches!(
+        evs.last(),
+        Some(SessionEvent::TurnComplete { ok: false })
+    ));
+}
+
+#[test]
 fn qwen_live_gated() {
     if std::process::Command::new("qwen")
         .arg("--help")
