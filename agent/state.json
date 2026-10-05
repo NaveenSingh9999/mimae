@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "planner/contract loop done; 59 tests green",
+  "status": "Phase 4 workspace manager done; 68 tests green",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -18,12 +18,13 @@
     "Step 6: OpenCode T3 adapter — OpenCodeAdapter::spawn_local spawns `opencode serve` on a free port, wait_for_health polls with a 3s timeout, start_session POSTs /session, send_turn POSTs /session/:id/message and maps message parts (text/tool/step-finish) into SessionEvent, interrupt via POST .../abort, resume via GET .../session/:id, inject_context via POST .../message with noReply=true. Health checks, ureq requests have per-call timeouts (3s health / 10s resume+inject / 60s turn / 120s server child start). Live test opencode_live_session_semantics verifies contract against a real opencode server when the binary is on PATH (skipped otherwise); capabilites were exercised: start_session returned Started, send_turn returned Vec<SessionEvent> ending TurnComplete, interrupt true + Idle liveness, inject true. 41 tests total, clippy/fmt clean.",
     "Step 8: src/antigravity.rs — AntigravityAdapter implementing AgentAdapter over `agy -p <prompt> --output-format stream-json`, conversation_id captured from events, resume via --conversation, per-turn child kill on Drop. MimoCode added to CliKind. parse_agy_stream_line exposed for pure-parser test. tests/antigravity.rs contract + offline parser + live gated on binary (skipped: agy not on PATH).",
     "Step 9: gate4agent rechecked at v0.4.8 (MIT; 546 commits, 9 stars, 2 forks; rapid 0.4.x releases on 2026-10-02): first-tier Claude Code/Codex/Kimi/Grok, legacy Gemini/OpenCode, qwen removed; no Antigravity/Qwen/Mimo; async/tokio workbench surface mismatches Mimae's sync deterministic core. D3 closed as learn-from/do-not-depend.",
-    "Planner loop: src/planner.rs — plan_goal validates empty goal, duplicate/unknown tasks, dependency cycles, overlapping write scopes among parallel tasks (plan-vs-plan and plan-vs-active), shared-interface contract coverage, then publishes GoalSubmitted/TaskCreated/ContractProposed with causal chaining; propose/accept/change_contract + record_decision; next_assignment/assign by capability match; goal_progress with is_complete. TaskGraph now folds contracts (propose/accept/change with version checks). ContractStatus made Copy. tests/planner.rs: 6 tests (happy path, overlap/cycle/missing-contract rejection with zero log side effects, contract loop + replay equality, capability assignment + goal completion + replay equality). 59 tests total, clippy/fmt clean, commit f54b035."
+    "Planner loop: src/planner.rs — plan_goal validates empty goal, duplicate/unknown tasks, dependency cycles, overlapping write scopes among parallel tasks (plan-vs-plan and plan-vs-active), shared-interface contract coverage, then publishes GoalSubmitted/TaskCreated/ContractProposed with causal chaining; propose/accept/change_contract + record_decision; next_assignment/assign by capability match; goal_progress with is_complete. TaskGraph now folds contracts (propose/accept/change with version checks). ContractStatus made Copy. tests/planner.rs: 6 tests (happy path, overlap/cycle/missing-contract rejection with zero log side effects, contract loop + replay equality, capability assignment + goal completion + replay equality). 59 tests total, clippy/fmt clean, commit f54b035.",
+    "Phase 4: src/workspace.rs — WorkspaceManager (create/list/remove worktrees, changed_vs_base, dirty_paths), PathLeaseRegistry (acquire/release/owner_of), predict_overlaps pure pairwise check, IntegrationGate (prepare/merge_branch with conflict paths/run_check/advance). tests/workspace.rs: 6 tests on temp git repos (roundtrip, dirty paths, lease conflicts, overlap prediction, clean merge+advance, conflict reporting). 68 tests total, clippy/fmt clean."
   ],
   "open_blockers": [
     "Remaining OPEN: Antigravity/Qwen/Mimo live conformance; Mimo envelope/session-id fields"
   ],
   "next_steps": [
-    "Await owner direction: workspace manager (Phase 4), messaging/context (Phase 5), or adapter live conformance"
+    "Await owner direction: messaging/context (Phase 5), verification/security (Phase 7), or adapter live conformance"
   ]
 }

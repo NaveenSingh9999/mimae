@@ -59,3 +59,8 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - Assignment: next_assignment picks first ready task (deterministic TaskId order) matching agent capabilities; assign claims through Coordinator (team gate enforced); goal_progress counts done/failed with is_complete.
 - TaskGraph folds contracts now; ContractStatus is Copy like the other small enums.
 - tests/planner.rs: 6 tests. 59/59 total green, clippy -D warnings clean, fmt clean.
+
+## Phase 4 — workspace manager
+
+- src/workspace.rs: worktree lifecycle via git CLI, porcelain parsing that preserves status columns, path leases keyed by exact path, pairwise overlap prediction, integration gate that aborts conflicted merges before reporting paths and only fast-forwards main on clean merges + passing checks.
+- tests/workspace.rs: 6 tests using temp repos with local-only git identity config. 68/68 total green, clippy -D warnings clean, fmt clean.
