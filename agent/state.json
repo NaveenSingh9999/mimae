@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "step 3.5 (centralized Coordinator + D16) done; foundation steps 1-3.5 complete",
+  "status": "steps 1-4 done (vocab, log, TaskGraph+claim, Coordinator, lease/heartbeat TTL); ready for step 5",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -12,13 +12,13 @@
     "Step 1 implemented: src/{lib,ids,actor,entities,event}.rs + tests/vocab.rs; 8 tests pass, clippy -D warnings clean, fmt clean",
     "Step 2 implemented: src/log.rs — append-only JSON-lines log, flock single-writer, fsync per append, torn-tail recovery on open; tests/log.rs 7 tests pass, clippy/fmt clean",
     "Step 3: src/graph.rs (strict fold, stream()-based replay, dep-gated readiness, deterministic ready ordering, atomic claim) + src/team.rs (TeamState lifecycle incl. initializing->ready->running) + tests (graph: 8 incl. 50-task 2-thread barrier concurrency stress & from-log replay equality; team: 4) — 27 tests, clippy/fmt clean, commit c41a22b",
-    "Step 3.5: src/coordinator.rs — single ingest point owning EventLog+TaskGraph+TeamRegistry; publish/claim use validate-then-commit (dry-run on cloned views, append, swap) so rejected events never reach the log; D16 recorded (late joiners full members, gate never re-engages). 31 tests pass, clippy/fmt clean, commit 5113dea"
+    "Step 3.5: src/coordinator.rs — single ingest point owning EventLog+TaskGraph+TeamRegistry; publish/claim use validate-then-commit (dry-run on cloned views, append, swap) so rejected events never reach the log; D16 recorded (late joiners full members, gate never re-engages). 31 tests pass, clippy/fmt clean, commit 5113dea",
+    "Step 4: Lease gains ttl_ms; heartbeat extends expires_at_ms by ttl_ms; Coordinator::check_for_expired_leases sweeps by publishing LeaseExpired (no timer thread — driven at query time). Regression tests for InReview expiry, heartbeat TTL extension, sweep idempotence and from-log replay after sweep. 36 tests, clippy/fmt clean."
   ],
   "open_blockers": [
     "Section 17 open questions mostly resolved via DECISIONS.md D1-D13; remaining OPEN: gate4agent evaluation result, Antigravity CLI control surface, Qwen Code channels"
   ],
   "next_steps": [
-    "Step 4: leases + heartbeats with expiry recovery",
     "Step 5: deterministic coordinator against fake agents",
     "Step 6: fake agent harness for deterministic core testing"
   ]

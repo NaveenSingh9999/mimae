@@ -39,3 +39,9 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - src/coordinator.rs: Coordinator::open replays log into fresh views; publish() = validate on cloned views THEN append THEN swap (rejected events never touch the log, so replays stay clean); claim() = clone graph, claim, append TaskClaimed, apply to both views, swap. CoreError wraps Log/Fold/Team/Claim.
 - src/team.rs: AgentRegistered re-added as membership append (late joiner becomes member); state recompute still gated on Initializing only.
 - tests/coordinator.rs: 4 (publish flows all three stores; late joiner claimable with no state regression; rejected publish leaves log+views consistent; reopen replays Running state). 31/31 total, clippy -D warnings, fmt clean.
+
+## Step 4 — lease TTL + heartbeat extension + expiry sweep
+
+- src/entities.rs: `Lease.ttl_ms` added (`#[serde(default)]` so pre-v0.1 logs decode as 0 — legacy leases just expire as originally scheduled).
+- src/graph.rs: `LeaseHeartbeat` now extends `expires_at_ms = max(existing, at_ms + ttl_ms)` (was only updating `last_heartbeat_ms`, which meant heartbeats never kept leases alive). `graph::claim` stores the given `ttl_ms` on the lease. `LeaseExpired` fold additionally resets `InReview` → `Ready` (older code only handled Claimed/InProgress — ownerless InReview tasks could have advanced to Done with no owner).
+- src/coordinator.rs: `check_for_expired_leases(now_ms)` filter-maps leased, non-terminal tasks past `expires_at_ms` and publishes `LeaseExpired` for each via the single-writer publish path; second sweep is a no-op; reopening the log after a sweep replays to the same state.
