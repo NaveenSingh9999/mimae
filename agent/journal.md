@@ -45,3 +45,9 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - src/entities.rs: `Lease.ttl_ms` added (`#[serde(default)]` so pre-v0.1 logs decode as 0 — legacy leases just expire as originally scheduled).
 - src/graph.rs: `LeaseHeartbeat` now extends `expires_at_ms = max(existing, at_ms + ttl_ms)` (was only updating `last_heartbeat_ms`, which meant heartbeats never kept leases alive). `graph::claim` stores the given `ttl_ms` on the lease. `LeaseExpired` fold additionally resets `InReview` → `Ready` (older code only handled Claimed/InProgress — ownerless InReview tasks could have advanced to Done with no owner).
 - src/coordinator.rs: `check_for_expired_leases(now_ms)` filter-maps leased, non-terminal tasks past `expires_at_ms` and publishes `LeaseExpired` for each via the single-writer publish path; second sweep is a no-op; reopening the log after a sweep replays to the same state.
+
+## Step 6 — OpenCode adapter (e12eb08)
+
+- src/opencode.rs: OpenCodeAdapter implements AgentAdapter over opencode's local server API (ureq blocking client). start_session{ _cwd tolerated; server runs in spawn_local cwd } → POST /session {title, permission?}; send_turn → POST /session/:id/message with text parts; map_message_parts projects OpenCode message.parts directly onto SessionEvent (text → Ok, tool → ToolUse+ToolResult, step-finish → Usage, unknown → Ok with raw json); interrupt → POST /session/:id/abort; resume → GET /session/:id; inject_context → POST .../message noReply=true; Drop kills the child server it spawned.
+- req timeouts calibrated per call (3s health, 10s resume/inject, 60s turn). Health check polls every 200ms for at most 20s during spawn.
+- tests/opencode.rs: capabilities contract smoke test (always) + live-session test gated on `which opencode` returning 0 (spawn_local+start_session+send_turn+interrupt+liveness+inject). Live session took ~57s for a real-model turn, fully green on 2026-10-05 device.

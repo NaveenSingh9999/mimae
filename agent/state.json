@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae — Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "steps 1-5 done",
+  "status": "steps 1-6 done",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -14,13 +14,13 @@
     "Step 3: src/graph.rs (strict fold, stream()-based replay, dep-gated readiness, deterministic ready ordering, atomic claim) + src/team.rs (TeamState lifecycle incl. initializing->ready->running) + tests (graph: 8 incl. 50-task 2-thread barrier concurrency stress & from-log replay equality; team: 4) — 27 tests, clippy/fmt clean, commit c41a22b",
     "Step 3.5: src/coordinator.rs — single ingest point owning EventLog+TaskGraph+TeamRegistry; publish/claim use validate-then-commit (dry-run on cloned views, append, swap) so rejected events never reach the log; D16 recorded (late joiners full members, gate never re-engages). 31 tests pass, clippy/fmt clean, commit 5113dea",
     "Step 4: Lease gains ttl_ms; heartbeat extends expires_at_ms by ttl_ms; Coordinator::check_for_expired_leases sweeps by publishing LeaseExpired (no timer thread — driven at query time). Regression tests for InReview expiry, heartbeat TTL extension, sweep idempotence and from-log replay after sweep. 36 tests, clippy/fmt clean.",
-    "Step 5: src/adapter.rs — AgentAdapter trait contract (capabilities, start_session, send_turn, interrupt, resume, inject_context, liveness), SessionEvent normalized event types (Ok/Error/ToolUse/ToolResult/Usage/PermissionRequest/TurnComplete/StateChanged) with serde, TransportMode enum (HeadlessJson/LocalHttpServer/SSE/Pty). AdapterCapabilities carries can_interrupt/resume/inject/hooks + declared_capabilities. AgentState now Copy+Default. tests/adapter.rs with scripted impl + roundtrip. 39 incidents tests pass, clippy/fmt clean."
+    "Step 5: src/adapter.rs — AgentAdapter trait contract (capabilities, start_session, send_turn, interrupt, resume, inject_context, liveness), SessionEvent normalized event types (Ok/Error/ToolUse/ToolResult/Usage/PermissionRequest/TurnComplete/StateChanged) with serde, TransportMode enum (HeadlessJson/LocalHttpServer/SSE/Pty). AdapterCapabilities carries can_interrupt/resume/inject/hooks + declared_capabilities. AgentState now Copy+Default. tests/adapter.rs with scripted impl + roundtrip. 39 incidents tests pass, clippy/fmt clean.",
+    "Step 6: OpenCode T3 adapter — OpenCodeAdapter::spawn_local spawns `opencode serve` on a free port, wait_for_health polls with a 3s timeout, start_session POSTs /session, send_turn POSTs /session/:id/message and maps message parts (text/tool/step-finish) into SessionEvent, interrupt via POST .../abort, resume via GET .../session/:id, inject_context via POST .../message with noReply=true. Health checks, ureq requests have per-call timeouts (3s health / 10s resume+inject / 60s turn / 120s server child start). Live test opencode_live_session_semantics verifies contract against a real opencode server when the binary is on PATH (skipped otherwise); capabilites were exercised: start_session returned Started, send_turn returned Vec<SessionEvent> ending TurnComplete, interrupt true + Idle liveness, inject true. 41 tests total, clippy/fmt clean."
   ],
   "open_blockers": [
     "Section 17 open questions mostly resolved via DECISIONS.md D1-D13; remaining OPEN: gate4agent evaluation result, Antigravity CLI control surface, Qwen Code channels"
   ],
   "next_steps": [
-    "Step 6: OpenCode T3 adapter over `opencode serve` with conformance test on this device",
     "Step 7: Claude Code T2 headless JSON/stream-json adapter + hooks (code-ready, live conformance later on a box with claude installed)",
     "Step 8: Antigravity CLI adapter after verifying its driver surface",
     "Step 9: gate4agent prior-art evaluation (D3)"
