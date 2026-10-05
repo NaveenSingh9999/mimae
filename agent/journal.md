@@ -107,3 +107,8 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 
 - 3 new scenarios in tests/eval.rs compose drive_goal with the metrics harness: full two-agent completion, stall (direct claim, no turn) → sweep → reclaim with reclaims=1/lease_expiries=1, and a discovery message whose seq latency is measured through completion.
 - 114/114 total green, clippy -D warnings clean, fmt clean.
+
+## Framework facade
+
+- src/host.rs: Mimae facade owning Coordinator + per-agent adapters; with_hooks transition; poll_approvals answers pending Human gates via hook; drain_notifications surfaces Escalation/Blocker to hook; drain_events replays to hook; send_message added after test exposed the gap.
+- README + D21. tests/host.rs (2). 116/116 total green, clippy -D warnings clean, fmt clean.
