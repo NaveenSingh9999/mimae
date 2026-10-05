@@ -121,6 +121,20 @@ fn try_lock(_file: &File) -> Result<bool, io::Error> {
     Ok(true)
 }
 
+fn lock_exclusive(file: &File) -> Result<bool, io::Error> {
+    let mut attempts = 0;
+    loop {
+        if try_lock(file)? {
+            return Ok(true);
+        }
+        attempts += 1;
+        if attempts >= 20 {
+            return Ok(false);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 fn scan_log(bytes: &[u8]) -> Result<(u64, u64, usize), LogError> {
     let mut events = 0u64;
     let mut high_water = 0u64;
@@ -163,7 +177,7 @@ impl EventLog {
             .append(true)
             .create(true)
             .open(&path)?;
-        if !try_lock(&file)? {
+        if !lock_exclusive(&file)? {
             return Err(LogError::Locked(path));
         }
         let mut raw = Vec::new();

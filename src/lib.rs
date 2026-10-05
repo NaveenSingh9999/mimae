@@ -7,6 +7,7 @@ pub mod claude;
 pub mod context;
 pub mod coordinator;
 pub mod entities;
+pub mod eval;
 pub mod event;
 pub mod graph;
 pub mod ids;
@@ -30,6 +31,9 @@ pub use claude::ClaudeAdapter;
 pub use context::{Brief, ContextError, ReviewContext, build_brief, build_review_context};
 pub use coordinator::{Coordinator, CoreError};
 pub use entities::*;
+pub use eval::{
+    Baseline, ScenarioMetrics, ScenarioReport, collect_metrics, compare_message_cost, report,
+};
 pub use event::{Event, EventPayload, KnownPayload, PROTOCOL_VERSION};
 pub use graph::{ClaimError, FoldError, TaskGraph};
 pub use ids::*;
