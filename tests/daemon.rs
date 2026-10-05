@@ -280,6 +280,106 @@ fn rpc_over_socket(
 }
 
 #[test]
+fn negotiate_accepts_matching_protocol() {
+    let mut coord = open_coord("negotiate-ok");
+    let resp = rpc(
+        &mut coord,
+        "mimae.negotiate",
+        serde_json::json!({"protocol": 1, "client": "daemon-test"}),
+    );
+    assert_eq!(resp["result"]["compatible"], true);
+    assert_eq!(resp["result"]["protocol"], 1);
+    assert!(resp["result"]["server"].is_string());
+}
+
+#[test]
+fn negotiate_rejects_mismatched_protocol() {
+    let mut coord = open_coord("negotiate-bad");
+    for version in [0, 2, 99] {
+        let resp = rpc(
+            &mut coord,
+            "mimae.negotiate",
+            serde_json::json!({"protocol": version, "client": "daemon-test"}),
+        );
+        assert_eq!(resp["error"]["code"], -32001, "version {version}");
+    }
+    let resp = rpc(&mut coord, "mimae.negotiate", serde_json::json!({}));
+    assert_eq!(resp["error"]["code"], -32602);
+}
+
+#[test]
+fn socket_gates_calls_until_negotiated() {
+    let dir = std::env::temp_dir().join(format!(
+        "mimae-daemon-negotiate-{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("run.log");
+    let (coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback for daemon test");
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let _ = serve(listener, std::sync::Arc::new(std::sync::Mutex::new(coord)));
+    });
+    let stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+        .unwrap();
+    let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+    let mut writer = stream;
+    // State calls before negotiation are refused, but hello stays open.
+    let early = rpc_over_socket(
+        &mut reader,
+        &mut writer,
+        "mimae.ready_tasks",
+        serde_json::json!({}),
+    );
+    assert_eq!(early["error"]["code"], -32002);
+    let hello = rpc_over_socket(
+        &mut reader,
+        &mut writer,
+        "mimae.hello",
+        serde_json::json!({}),
+    );
+    assert_eq!(hello["result"]["protocol"], 1);
+    // A failed negotiation does not open the gate.
+    let bad = rpc_over_socket(
+        &mut reader,
+        &mut writer,
+        "mimae.negotiate",
+        serde_json::json!({"protocol": 99, "client": "daemon-test"}),
+    );
+    assert_eq!(bad["error"]["code"], -32001);
+    let still_closed = rpc_over_socket(
+        &mut reader,
+        &mut writer,
+        "mimae.ready_tasks",
+        serde_json::json!({}),
+    );
+    assert_eq!(still_closed["error"]["code"], -32002);
+    // A successful negotiation opens the gate for the connection.
+    let good = rpc_over_socket(
+        &mut reader,
+        &mut writer,
+        "mimae.negotiate",
+        serde_json::json!({"protocol": 1, "client": "daemon-test"}),
+    );
+    assert_eq!(good["result"]["compatible"], true);
+    let tasks = rpc_over_socket(
+        &mut reader,
+        &mut writer,
+        "mimae.ready_tasks",
+        serde_json::json!({}),
+    );
+    assert!(tasks.get("result").is_some(), "{tasks}");
+}
+
+#[test]
 fn live_socket_roundtrip() {
     let dir = std::env::temp_dir().join("mimae-daemon-live");
     std::fs::create_dir_all(&dir).unwrap();
@@ -305,6 +405,14 @@ fn live_socket_roundtrip() {
         serde_json::json!({}),
     );
     assert_eq!(hello["result"]["protocol"], 1);
+    let negotiated = rpc_over_socket(
+        &mut reader,
+        &mut writer,
+        "mimae.negotiate",
+        serde_json::json!({"protocol": 1, "client": "daemon-test"}),
+    );
+    assert_eq!(negotiated["result"]["compatible"], true);
+    assert_eq!(negotiated["result"]["protocol"], 1);
     let team = serde_json::json!({
         "id": 1, "head": 1, "mode": "auto", "state": "initializing", "members": [1]
     });

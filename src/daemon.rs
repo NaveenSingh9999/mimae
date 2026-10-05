@@ -64,6 +64,25 @@ fn dispatch(
             "protocol": PROTOCOL_VERSION,
             "version": env!("CARGO_PKG_VERSION"),
         })),
+        "mimae.negotiate" => {
+            let client_protocol: u32 = param(params, "protocol").map_err(|e| (-32602, e))?;
+            let client: String = param(params, "client").map_err(|e| (-32602, e))?;
+            if client_protocol == PROTOCOL_VERSION {
+                Ok(serde_json::json!({
+                    "protocol": PROTOCOL_VERSION,
+                    "compatible": true,
+                    "server": format!("mimae-core {}", env!("CARGO_PKG_VERSION")),
+                    "client": client,
+                }))
+            } else {
+                Err((
+                    -32001,
+                    format!(
+                        "incompatible protocol: client speaks {client_protocol}, server speaks {PROTOCOL_VERSION}"
+                    ),
+                ))
+            }
+        }
         "mimae.publish" => {
             let actor: Actor = param(params, "actor").map_err(|e| (-32602, e))?;
             let payload: EventPayload = param(params, "payload").map_err(|e| (-32602, e))?;
@@ -236,6 +255,12 @@ fn handle_connection(stream: std::net::TcpStream, coordinator: Arc<Mutex<Coordin
     let mut reader = std::io::BufReader::new(reader_stream);
     let mut writer = stream;
     let mut line = String::new();
+    // Transport-level negotiation gate: a connection must complete
+    // mimae.negotiate before any state-changing or state-reading call.
+    // mimae.hello stays open so clients can discover the server version.
+    // Note: handle_request itself stays ungated — in-process embedders that
+    // call the dispatcher directly own their own version discipline.
+    let mut negotiated = false;
     loop {
         line.clear();
         match reader.read_line(&mut line) {
@@ -244,12 +269,23 @@ fn handle_connection(stream: std::net::TcpStream, coordinator: Arc<Mutex<Coordin
             Err(_) => break,
         }
         let response = match serde_json::from_str::<serde_json::Value>(line.trim()) {
-            Ok(request) => match coordinator.lock() {
-                Ok(mut guard) => handle_request(&mut guard, &request),
-                Err(_) => {
-                    serde_json::json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32000, "message": "coordinator busy"}})
+            Ok(request) => {
+                let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
+                if !negotiated && method != "mimae.hello" && method != "mimae.negotiate" {
+                    serde_json::json!({"jsonrpc": "2.0", "id": request.get("id").cloned().unwrap_or(serde_json::Value::Null), "error": {"code": -32002, "message": "negotiate protocol first (call mimae.negotiate)"}})
+                } else {
+                    let response = match coordinator.lock() {
+                        Ok(mut guard) => handle_request(&mut guard, &request),
+                        Err(_) => {
+                            serde_json::json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32000, "message": "coordinator busy"}})
+                        }
+                    };
+                    if method == "mimae.negotiate" && response.get("error").is_none() {
+                        negotiated = true;
+                    }
+                    response
                 }
-            },
+            }
             Err(e) => {
                 serde_json::json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": format!("parse error: {e}")}})
             }

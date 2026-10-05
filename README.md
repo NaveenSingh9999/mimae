@@ -33,19 +33,27 @@ Three surfaces, in order of preference:
    serves newline-delimited JSON-RPC 2.0 on loopback TCP for non-Rust hosts
    (Electron, Tauri, editor plugins, scripts). Every request is one JSON
    object per line; every reply carries the same `id`.
-3. **Language bindings** (Node, Python): planned on top of the daemon
-   protocol, not started yet.
+3. **Language bindings**: `bindings/node` ships the first one (napi-rs,
+   JSON-string surface over `Coordinator`; `npm test` runs a full
+   coordination loop from JS). Python is next, after the daemon.
+   `examples/sample_ade.rs` (`cargo run --example sample_ade`) is the
+   minimal Rust host: open, register agents, team lifecycle, submit goal,
+   drive, human-gate approval via hooks, event subscription.
 
 ### Daemon protocol
 
 `mimae.hello` returns `{"protocol": 1, "version": "..."}` — check `protocol`
 before anything else; the number only moves on breaking wire changes.
+Every connection must then call `mimae.negotiate` before any other method:
+the server enforces exact-match negotiation (v1; tolerance for newer minor
+versions may come later) and answers `-32002` until negotiation succeeds.
 `EventPayload` values unknown to the reader are preserved verbatim, so old
 readers replay newer logs without data loss.
 
 | Method | Params | Result |
 |---|---|---|
 | `mimae.hello` | — | `{protocol, version}` |
+| `mimae.negotiate` | `protocol`, `client` | `{protocol, compatible, server, client}` or `-32001` |
 | `mimae.publish` | `actor`, `payload`, `causes`, `at_ms` | appended `Event` |
 | `mimae.claim` | `task_id`, `agent_id`, `scope`, `now_ms`, `ttl_ms` | `Lease` |
 | `mimae.ready_tasks` | — | `[task_id]` in deterministic order |
@@ -64,7 +72,8 @@ readers replay newer logs without data loss.
 | `mimae.propose_contract` | `contract`, `at_ms` | appended `Event` |
 
 Errors follow JSON-RPC 2.0: `-32601` unknown method, `-32602` bad params,
-`-32700` malformed line, `-32000` coordinator rejection (the log is never
+`-32700` malformed line, `-32001` protocol mismatch, `-32002` call before
+negotiation, `-32000` coordinator rejection (the log is never
 mutated on rejection). Poll `mimae.events_since` with the last seen `seq`
 to subscribe; Mimae never pushes UI — the host renders.
 

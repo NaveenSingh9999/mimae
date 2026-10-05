@@ -1,0 +1,10 @@
+{
+  "name": "mimae-node",
+  "version": "0.1.0",
+  "description": "Node.js binding for the Mimae coordination layer",
+  "license": "MIT OR Apache-2.0",
+  "main": "mimae_node.node",
+  "scripts": {
+    "test": "node test.js"
+  }
+}

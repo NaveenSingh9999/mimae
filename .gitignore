@@ -1,1 +1,3 @@
 /target
+bindings/node/*.node
+bindings/node/node_modules/
