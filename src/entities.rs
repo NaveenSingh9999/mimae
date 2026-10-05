@@ -107,6 +107,7 @@ pub enum CliKind {
     Codex,
     Antigravity,
     QwenCode,
+    MimoCode,
     Gemini,
     Other(String),
 }
