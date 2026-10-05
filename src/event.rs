@@ -112,6 +112,12 @@ pub enum KnownPayload {
         passed: bool,
         detail: String,
     },
+    CostRecorded {
+        agent_id: AgentId,
+        task_id: Option<TaskId>,
+        input_tokens: u64,
+        output_tokens: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -151,6 +157,7 @@ fn is_known_kind(kind: &str) -> bool {
             | "artifact_recorded"
             | "gate_opened"
             | "gate_decided"
+            | "cost_recorded"
     )
 }
 

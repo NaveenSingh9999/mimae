@@ -1,7 +1,7 @@
 use crate::actor::Actor;
 use crate::adapter::AgentAdapter;
 use crate::coordinator::{Coordinator, CoreError};
-use crate::drive::{DriveError, DriveReport, drive_goal};
+use crate::drive::{CostPolicy, DriveError, DriveReport, drive_goal};
 use crate::entities::{
     Agent, Artifact, Contract, Decision, Gate, GateKind, GateStatus, Goal, Message, MessageKind,
     Team,
@@ -117,6 +117,25 @@ impl<H: HostHooks> Mimae<H> {
         ttl_ms: u64,
         max_rounds: u32,
     ) -> Result<DriveReport, DriveError> {
+        self.drive_with_policy(
+            goal_id,
+            now_ms,
+            ttl_ms,
+            max_rounds,
+            &CostPolicy::unlimited(),
+        )
+    }
+
+    /// Drive with the cost kill-switch armed. Breached tasks fail with
+    /// reason `"budget-exceeded"`.
+    pub fn drive_with_policy(
+        &mut self,
+        goal_id: GoalId,
+        now_ms: u64,
+        ttl_ms: u64,
+        max_rounds: u32,
+        policy: &CostPolicy,
+    ) -> Result<DriveReport, DriveError> {
         let mut pairs: Vec<(AgentId, Box<dyn AgentAdapter>)> =
             std::mem::take(&mut self.adapters).into_iter().collect();
         pairs.sort_by_key(|(id, _)| id.get());
@@ -127,6 +146,7 @@ impl<H: HostHooks> Mimae<H> {
             now_ms,
             ttl_ms,
             max_rounds,
+            policy,
         )?;
         self.adapters = pairs.into_iter().collect();
         Ok(report)

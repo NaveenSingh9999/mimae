@@ -185,7 +185,16 @@ fn drive_goal_to_completion_with_two_agents() {
         (AgentId::new(1), Box::new(a1)),
         (AgentId::new(2), Box::new(a2)),
     ];
-    let report = drive_goal(&mut coord, &mut agents, GoalId::new(10), 100, 60_000, 10).unwrap();
+    let report = drive_goal(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        10,
+        &CostPolicy::unlimited(),
+    )
+    .unwrap();
     assert!(report.progress.is_complete());
     assert_eq!(report.progress.total, 2);
     assert_eq!(report.progress.done, 2);
@@ -210,6 +219,7 @@ fn drive_failed_turn_marks_task_failed() {
         agents[0].1.as_mut(),
         100,
         60_000,
+        &CostPolicy::unlimited(),
     )
     .unwrap();
     assert_eq!(reported.assigned, Some(TaskId::new(1)));
@@ -233,6 +243,7 @@ fn drive_idle_agent_reports_no_assignment() {
         agents[0].1.as_mut(),
         100,
         60_000,
+        &CostPolicy::unlimited(),
     )
     .unwrap();
     assert_eq!(reported.assigned, None);
@@ -243,8 +254,15 @@ fn drive_idle_agent_reports_no_assignment() {
 fn drive_unknown_agent_is_an_error() {
     let mut coord = setup("unknown", &[1]);
     let mut adapter = ScriptAdapter::default();
-    let err =
-        drive_agent_turn(&mut coord, AgentId::new(99), &mut adapter, 100, 60_000).unwrap_err();
+    let err = drive_agent_turn(
+        &mut coord,
+        AgentId::new(99),
+        &mut adapter,
+        100,
+        60_000,
+        &CostPolicy::unlimited(),
+    )
+    .unwrap_err();
     assert!(matches!(err, DriveError::Plan(PlanError::NoSuchAgent(_))));
     drop(coord);
 }
@@ -307,6 +325,7 @@ fn head_enforces_token_budget() {
             max_rounds: 10,
             stuck_threshold: 3,
             token_budget_per_agent: Some(10),
+            cost_policy: CostPolicy::unlimited(),
         },
     )
     .unwrap();
@@ -359,5 +378,301 @@ fn head_collects_failed_tasks() {
     .unwrap();
     assert_eq!(report.failed_tasks, vec![TaskId::new(1)]);
     assert!(!report.progress.is_complete());
+    drop(coord);
+}
+
+fn record_spend(coord: &mut Coordinator, agent: u64, task: Option<u64>, tokens: u64, at: u64) {
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::CostRecorded {
+                agent_id: AgentId::new(agent),
+                task_id: task.map(TaskId::new),
+                input_tokens: tokens,
+                output_tokens: 0,
+            }),
+            vec![],
+            at,
+        )
+        .unwrap();
+}
+
+fn failed_reason(coord: &Coordinator, task: u64) -> Option<String> {
+    coord
+        .events_since(0)
+        .unwrap()
+        .iter()
+        .rev()
+        .filter_map(|event| match &event.payload {
+            EventPayload::Known(KnownPayload::TaskStatusChanged {
+                task_id,
+                to,
+                reason,
+                ..
+            }) if *task_id == TaskId::new(task) && *to == TaskStatus::Failed => reason.clone(),
+            _ => None,
+        })
+        .next()
+}
+
+fn cost_events(coord: &Coordinator) -> usize {
+    coord
+        .events_since(0)
+        .unwrap()
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                EventPayload::Known(KnownPayload::CostRecorded { .. })
+            )
+        })
+        .count()
+}
+
+#[test]
+fn drive_records_turn_cost_durably() {
+    let path = temp_log("cost-durable");
+    let _ = std::fs::remove_file(&path);
+    let (mut coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    // Canonical setup on this path: team + agent + two tasks.
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::TeamCreated {
+                team: Team {
+                    id: TeamId::new(1),
+                    head: AgentId::new(1),
+                    mode: TeamMode::Auto,
+                    state: TeamState::Initializing,
+                    members: vec![AgentId::new(1)],
+                },
+            }),
+            vec![],
+            1,
+        )
+        .unwrap();
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::AgentRegistered {
+                agent: agent(1, &["backend"]),
+            }),
+            vec![],
+            2,
+        )
+        .unwrap();
+    coord
+        .publish(
+            Actor::Coordinator,
+            EventPayload::Known(KnownPayload::AgentReady {
+                agent_id: AgentId::new(1),
+            }),
+            vec![],
+            3,
+        )
+        .unwrap();
+    plan_two_tasks(&mut coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(100, 50));
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(a1);
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &CostPolicy::unlimited(),
+    )
+    .unwrap();
+    assert!(reported.turn_ok);
+    assert_eq!(reported.tokens_used, 150);
+    assert!(!reported.budget_breached);
+    assert_eq!(coord.graph().cost_by_agent[&AgentId::new(1)], 150);
+    assert_eq!(coord.graph().cost_by_task[&TaskId::new(1)], 150);
+    assert_eq!(
+        coord.graph().agents[&AgentId::new(1)].budget_used_tokens,
+        150
+    );
+    assert_eq!(cost_events(&coord), 1);
+    drop(coord);
+    // Spend survives a restart: the fold rebuilds it from CostRecorded.
+    let (coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    assert_eq!(coord.graph().cost_by_agent[&AgentId::new(1)], 150);
+    assert_eq!(coord.graph().cost_by_task[&TaskId::new(1)], 150);
+    drop(coord);
+}
+
+#[test]
+fn drive_per_turn_cap_fails_anomalous_turn() {
+    let mut coord = setup("cost-per-turn", &[1]);
+    plan_two_tasks(&mut coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(100, 50));
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(a1);
+    let policy = CostPolicy {
+        per_turn_tokens_max: Some(100),
+        ..CostPolicy::unlimited()
+    };
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &policy,
+    )
+    .unwrap();
+    // The turn succeeded but cost 150: anomalous, so the task fails instead
+    // of advancing — while the spend itself stays recorded.
+    assert!(reported.budget_breached);
+    assert!(!reported.completed);
+    assert_eq!(reported.tokens_used, 150);
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Failed
+    );
+    assert_eq!(
+        failed_reason(&coord, 1).as_deref(),
+        Some(BUDGET_EXCEEDED_REASON)
+    );
+    assert_eq!(coord.graph().cost_by_task[&TaskId::new(1)], 150);
+    drop(coord);
+}
+
+#[test]
+fn drive_per_task_cap_accumulates_across_turns() {
+    let mut coord = setup("cost-per-task", &[1]);
+    plan_two_tasks(&mut coord);
+    // Prior spend of 90 already charged to task 1 (e.g. an earlier turn).
+    record_spend(&mut coord, 1, Some(1), 90, 50);
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(60, 0));
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(a1);
+    let policy = CostPolicy {
+        per_task_tokens_max: Some(100),
+        ..CostPolicy::unlimited()
+    };
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &policy,
+    )
+    .unwrap();
+    // 90 prior + 60 this turn = 150 over the 100 cap: budget failure.
+    assert!(reported.budget_breached);
+    assert_eq!(
+        failed_reason(&coord, 1).as_deref(),
+        Some(BUDGET_EXCEEDED_REASON)
+    );
+    assert_eq!(coord.graph().cost_by_task[&TaskId::new(1)], 150);
+    drop(coord);
+}
+
+#[test]
+fn drive_per_task_cap_fails_before_burning_another_turn() {
+    let mut coord = setup("cost-per-task-pre", &[1]);
+    plan_two_tasks(&mut coord);
+    // Task 1 is already 150 over a 100 cap: no new turn may run.
+    record_spend(&mut coord, 1, Some(1), 150, 50);
+    let before = cost_events(&coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(10, 0));
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(a1);
+    let policy = CostPolicy {
+        per_task_tokens_max: Some(100),
+        ..CostPolicy::unlimited()
+    };
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &policy,
+    )
+    .unwrap();
+    assert!(reported.budget_breached);
+    assert_eq!(reported.assigned, Some(TaskId::new(1)));
+    assert_eq!(reported.tokens_used, 0);
+    // No turn ran (nothing consumed, no new cost recorded) and the task
+    // failed with the kill-switch reason.
+    assert_eq!(cost_events(&coord), before);
+    assert_eq!(
+        failed_reason(&coord, 1).as_deref(),
+        Some(BUDGET_EXCEEDED_REASON)
+    );
+    drop(coord);
+}
+
+#[test]
+fn drive_per_agent_cap_skips_claim() {
+    let mut coord = setup("cost-per-agent", &[1]);
+    plan_two_tasks(&mut coord);
+    // Agent 1 already spent 200 against a 100 cap: it claims nothing.
+    record_spend(&mut coord, 1, None, 200, 50);
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(ScriptAdapter::default());
+    let policy = CostPolicy {
+        per_agent_tokens_max: Some(100),
+        ..CostPolicy::unlimited()
+    };
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &policy,
+    )
+    .unwrap();
+    assert!(reported.budget_breached);
+    assert_eq!(reported.assigned, None);
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Proposed
+    );
+    drop(coord);
+}
+
+#[test]
+fn drive_head_honors_cost_policy() {
+    let mut coord = setup("cost-head", &[1]);
+    plan_two_tasks(&mut coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(100, 0));
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> = vec![(AgentId::new(1), Box::new(a1))];
+    let report = drive_head(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        HeadConfig {
+            max_rounds: 10,
+            stuck_threshold: 3,
+            token_budget_per_agent: None,
+            cost_policy: CostPolicy {
+                per_task_tokens_max: Some(50),
+                ..CostPolicy::unlimited()
+            },
+        },
+    )
+    .unwrap();
+    // The 100-token turn breached the 50-token per-task cap: task 1 failed
+    // by the kill-switch, task 2 stays gated behind it, and the failure is
+    // collected like any other.
+    assert_eq!(report.failed_tasks, vec![TaskId::new(1)]);
+    assert_eq!(report.progress.done, 0);
+    assert!(!report.progress.is_complete());
+    assert_eq!(
+        failed_reason(&coord, 1).as_deref(),
+        Some(BUDGET_EXCEEDED_REASON)
+    );
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(2)].status,
+        TaskStatus::Proposed
+    );
     drop(coord);
 }

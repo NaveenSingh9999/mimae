@@ -135,6 +135,11 @@ pub struct TaskGraph {
     pub decisions: Vec<Decision>,
     pub artifacts: HashMap<ArtifactId, Artifact>,
     pub gates: HashMap<GateId, Gate>,
+    /// Durable token spend folded from `CostRecorded` events. Cost is
+    /// telemetry, never a claim on other state, so it is recorded even when
+    /// the agent or task is unknown — spend must never be silently lost.
+    pub cost_by_agent: HashMap<AgentId, u64>,
+    pub cost_by_task: HashMap<TaskId, u64>,
 }
 
 impl TaskGraph {
@@ -401,6 +406,31 @@ impl TaskGraph {
                     }
                 }
                 *stored = contract.clone();
+            }
+            KnownPayload::CostRecorded {
+                agent_id,
+                task_id,
+                input_tokens,
+                output_tokens,
+            } => {
+                let total = input_tokens.saturating_add(*output_tokens);
+                *self.cost_by_agent.entry(*agent_id).or_insert(0) = self
+                    .cost_by_agent
+                    .get(agent_id)
+                    .copied()
+                    .unwrap_or(0)
+                    .saturating_add(total);
+                if let Some(task_id) = task_id {
+                    *self.cost_by_task.entry(*task_id).or_insert(0) = self
+                        .cost_by_task
+                        .get(task_id)
+                        .copied()
+                        .unwrap_or(0)
+                        .saturating_add(total);
+                }
+                if let Some(agent) = self.agents.get_mut(agent_id) {
+                    agent.budget_used_tokens = agent.budget_used_tokens.saturating_add(total);
+                }
             }
             _ => {}
         }

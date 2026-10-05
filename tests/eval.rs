@@ -1254,7 +1254,16 @@ fn eval_driven_goal_two_agents_complete() {
         (AgentId::new(1), Box::new(ScriptAdapter::ok_times(4))),
         (AgentId::new(2), Box::new(ScriptAdapter::ok_times(4))),
     ];
-    let driven = drive_goal(&mut coord, &mut agents, GoalId::new(10), 100, 60_000, 10).unwrap();
+    let driven = drive_goal(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        10,
+        &CostPolicy::unlimited(),
+    )
+    .unwrap();
     assert!(driven.progress.is_complete());
     assert_eq!(driven.progress.total, 2);
     assert_eq!(driven.progress.done, 2);
@@ -1293,6 +1302,7 @@ fn eval_driven_goal_stall_reclaim() {
         300_000,
         60_000,
         10,
+        &CostPolicy::unlimited(),
     )
     .unwrap();
     assert!(driven.progress.is_complete());
@@ -1342,7 +1352,16 @@ fn eval_driven_goal_discovery_latency() {
         (AgentId::new(1), Box::new(ScriptAdapter::ok_times(4))),
         (AgentId::new(2), Box::new(ScriptAdapter::ok_times(4))),
     ];
-    let driven = drive_goal(&mut coord, &mut agents, GoalId::new(10), 100, 60_000, 10).unwrap();
+    let driven = drive_goal(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        10,
+        &CostPolicy::unlimited(),
+    )
+    .unwrap();
     assert!(driven.progress.is_complete());
     drop(coord);
     drop(agents);
@@ -1358,6 +1377,64 @@ fn eval_driven_goal_discovery_latency() {
         &report,
         PromotionGate {
             max_discovery_latency_seqs: Some(100.0),
+            ..PromotionGate::strict()
+        },
+    );
+}
+
+#[test]
+fn eval_driven_goal_budget_breach_tags_runaway() {
+    let path = temp_log("driven-budget");
+    let _ = std::fs::remove_file(&path);
+    let (mut coord, _) = Coordinator::open(&path, EventLogOptions::default()).unwrap();
+    setup_team(&mut coord, &[1, 2], 1);
+    plan_pair(&mut coord, 10);
+    let mut turns = std::collections::VecDeque::new();
+    turns.push_back(vec![
+        SessionEvent::Ok {
+            payload: "did it".into(),
+        },
+        SessionEvent::Usage {
+            input_tokens: 100,
+            output_tokens: 0,
+        },
+        SessionEvent::TurnComplete { ok: true },
+    ]);
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> =
+        vec![(AgentId::new(1), Box::new(ScriptAdapter { turns }))];
+    let policy = CostPolicy {
+        per_task_tokens_max: Some(50),
+        ..CostPolicy::unlimited()
+    };
+    let driven = drive_goal(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        10,
+        &policy,
+    )
+    .unwrap();
+    assert!(!driven.progress.is_complete());
+    assert_eq!(driven.progress.failed, 1);
+    drop(coord);
+    drop(agents);
+    let report = report("driven-budget", &path, 5, true).unwrap();
+    assert_eq!(report.metrics.tasks_failed, 1);
+    // The kill-switch failure is auditable: spend is durable and the
+    // budget-exceeded reason tags RunawayCost (specification).
+    let (log, _) = EventLog::open(&path, EventLogOptions::default()).unwrap();
+    let tags = tag_failures(&log).unwrap();
+    assert!(tags.iter().any(|t| t.kind == FailureKind::RunawayCost));
+    drop(log);
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_tasks_failed: 1,
+            max_specification_tags: 1,
+            max_verification_tags: 1,
             ..PromotionGate::strict()
         },
     );

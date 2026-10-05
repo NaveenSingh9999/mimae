@@ -36,8 +36,8 @@ pub use context::{Brief, ContextError, ReviewContext, build_brief, build_review_
 pub use coordinator::{Coordinator, CoreError};
 pub use daemon::{handle_request, serve};
 pub use drive::{
-    DriveError, DriveReport, HeadConfig, HeadReport, TurnReport, drive_agent_turn, drive_goal,
-    drive_head,
+    BUDGET_EXCEEDED_REASON, CostPolicy, DriveError, DriveReport, HeadConfig, HeadReport,
+    TurnReport, drive_agent_turn, drive_goal, drive_head,
 };
 pub use entities::*;
 pub use eval::{

@@ -22,10 +22,13 @@
 //! - [`FailureKind::DecisionConflict`]: a contract changed while at least one
 //!   of its party tasks was still active (claimed / in progress / in review /
 //!   integrating); i.e. terms moved under running work.
-//!
-//! Not covered: runaway cost has no signal in the log yet (there are no
-//! token/cost events), so it is classified but never auto-detected.
+//! - [`FailureKind::RunawayCost`]: a task failed with reason
+//!   `"budget-exceeded"` — the cost kill-switch (`CostPolicy` in `drive`)
+//!   stopped it. Spend itself is durable (`CostRecorded` events folded into
+//!   `TaskGraph::cost_by_agent` / `cost_by_task`), so caps hold across
+//!   restarts.
 
+use crate::drive::BUDGET_EXCEEDED_REASON;
 use crate::entities::{AgentState, GateKind, TaskStatus};
 use crate::event::{EventPayload, KnownPayload};
 use crate::ids::{AgentId, GateId, TaskId};
@@ -59,15 +62,17 @@ pub enum FailureKind {
     TaskFailed,
     GateFailed,
     IntegrationFailed,
+    RunawayCost,
 }
 
 impl FailureKind {
     /// Map a failure mode to its MAST category.
     pub fn category(self) -> MastCategory {
         match self {
-            FailureKind::AgentCrash | FailureKind::LeaseExpired | FailureKind::PromptInjection => {
-                MastCategory::Specification
-            }
+            FailureKind::AgentCrash
+            | FailureKind::LeaseExpired
+            | FailureKind::PromptInjection
+            | FailureKind::RunawayCost => MastCategory::Specification,
             FailureKind::AgentStuck
             | FailureKind::DecisionConflict
             | FailureKind::DuplicateWork => MastCategory::Misalignment,
@@ -78,7 +83,7 @@ impl FailureKind {
     }
 
     /// Every known failure mode, for exhaustive coverage tests.
-    pub fn all() -> [FailureKind; 9] {
+    pub fn all() -> [FailureKind; 10] {
         [
             FailureKind::AgentCrash,
             FailureKind::AgentStuck,
@@ -89,6 +94,7 @@ impl FailureKind {
             FailureKind::TaskFailed,
             FailureKind::GateFailed,
             FailureKind::IntegrationFailed,
+            FailureKind::RunawayCost,
         ]
     }
 }
@@ -181,7 +187,12 @@ pub fn tag_failures(store: &impl EventStore) -> Result<Vec<FailureTag>, LogError
                     ));
                 }
             }
-            KnownPayload::TaskStatusChanged { task_id, to, .. } => {
+            KnownPayload::TaskStatusChanged {
+                task_id,
+                to,
+                reason,
+                ..
+            } => {
                 task_status.insert(*task_id, to.clone());
                 match to {
                     TaskStatus::Blocked => tags.push(FailureTag::new(
@@ -197,6 +208,14 @@ pub fn tag_failures(store: &impl EventStore) -> Result<Vec<FailureTag>, LogError
                             FailureKind::TaskFailed,
                             format!("task {task_id} entered Failed"),
                         ));
+                        if reason.as_deref() == Some(BUDGET_EXCEEDED_REASON) {
+                            tags.push(FailureTag::new(
+                                event.seq,
+                                Some(*task_id),
+                                FailureKind::RunawayCost,
+                                format!("task {task_id} failed by cost kill-switch"),
+                            ));
+                        }
                         let owners = task_owners.get(task_id).map(HashSet::len).unwrap_or(0);
                         if owners >= 2 {
                             tags.push(FailureTag::new(

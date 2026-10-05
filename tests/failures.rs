@@ -129,6 +129,10 @@ fn categories_cover_all_kinds() {
         FailureKind::IntegrationFailed.category(),
         MastCategory::Verification
     );
+    assert_eq!(
+        FailureKind::RunawayCost.category(),
+        MastCategory::Specification
+    );
 }
 
 #[test]
@@ -195,6 +199,41 @@ fn tags_failed_task_as_verification() {
     let tags = tags_of(&log);
     assert_eq!(kinds(&tags), vec![FailureKind::TaskFailed]);
     assert_eq!(tags[0].category, MastCategory::Verification);
+}
+
+#[test]
+fn tags_budget_failure_as_runaway_cost() {
+    let mut log = open_log("runaway");
+    // A genuine failure tags only TaskFailed ...
+    push(
+        &mut log,
+        status(1, TaskStatus::InProgress, TaskStatus::Failed),
+    );
+    // ... while a kill-switch failure additionally tags RunawayCost.
+    push(
+        &mut log,
+        KnownPayload::TaskStatusChanged {
+            task_id: TaskId::new(2),
+            from: TaskStatus::Claimed,
+            to: TaskStatus::Failed,
+            reason: Some(BUDGET_EXCEEDED_REASON.to_string()),
+        },
+    );
+    let tags = tags_of(&log);
+    assert_eq!(
+        kinds(&tags),
+        vec![
+            FailureKind::TaskFailed,
+            FailureKind::TaskFailed,
+            FailureKind::RunawayCost
+        ]
+    );
+    let runaway = tags
+        .iter()
+        .find(|t| t.kind == FailureKind::RunawayCost)
+        .unwrap();
+    assert_eq!(runaway.category, MastCategory::Specification);
+    assert_eq!(runaway.task_id, Some(TaskId::new(2)));
 }
 
 #[test]
