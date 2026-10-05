@@ -4,7 +4,7 @@
   "goal": "Bootstrap the Mimae project from the concept brief (mimae-concept.md v0.1)",
   "project": "Mimae \u2014 Rust backend coordination layer for multi-agent coding CLIs (embeddable in ADEs, MCP-free, deterministic coordination core)",
   "phase": "0. Decisions and research closure (per mimae-concept.md Section 14)",
-  "status": "Phase 9 done (D24): negotiation, sample ADE, Node binding; 144 tests green",
+  "status": "Runaway-cost kill-switch done (D25); 152 tests green",
   "last_actions": [
     "Copied mimae-concept.md from ~/storage/downloads into repo root",
     "Initialized git repo and committed concept doc + agent state",
@@ -31,7 +31,8 @@
     "Review fix e426057: drain_notifications no longer destroys non-escalation inbox messages (new Router::drain_matching + regression test). 121 tests green, clippy/fmt clean.",
     "MAST failure tagging (Phase 8 follow-up, D22): src/failures.rs \u2014 FailureKind (9 modes) onto MastCategory::{Specification,Misalignment,Verification}; read-only tag_failures scan over EventStore; tests/failures.rs (12). 133 tests green, clippy/fmt clean, commit da28184.",
     "Gate promotion thresholds (Phase 8 follow-up, D23): PromotionGate in src/eval.rs \u2014 per-scenario pass/fail thresholds over ScenarioReport + FailureTags; every eval scenario declares its gate (strict for clean runs, explicit allowances for recovery scenarios); baselines gate Mimae against naive-chat volume. tests/promotion.rs (8). 141 tests green, clippy/fmt clean, commit 8dc6587.",
-    "Phase 9 (D24): daemon mimae.negotiate with exact-match enforcement + transport gate (3 new daemon tests); examples/sample_ade.rs minimal Rust host (drive 2/2, human gate via hooks); bindings/node first language binding (napi-rs JSON surface, test.js full loop passes from JS). 144 tests green, clippy/fmt clean workspace-wide, commit 1f34ff3."
+    "Phase 9 (D24): daemon mimae.negotiate with exact-match enforcement + transport gate (3 new daemon tests); examples/sample_ade.rs minimal Rust host (drive 2/2, human gate via hooks); bindings/node first language binding (napi-rs JSON surface, test.js full loop passes from JS). 144 tests green, clippy/fmt clean workspace-wide, commit 1f34ff3.",
+    "Runaway-cost kill-switch (D25): CostRecorded event + durable spend fold; CostPolicy enforced in drive_agent_turn/goal/head/host(drive_with_policy); RunawayCost tagging closes D22 gap. 8 new tests (restart durability, breach paths, eval tagging). 152 green, clippy/fmt clean, node+sample re-verified, commit e0d6166."
   ],
   "open_blockers": [
     "Remaining OPEN: Antigravity/Qwen/Mimo live conformance; Mimo envelope/session-id fields"

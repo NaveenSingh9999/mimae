@@ -137,3 +137,10 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - `examples/sample_ade.rs`: minimal host over `Mimae` facade — team-first ordering (register-before-team fails `NotInitialized`), drive 2/2, human gate auto-approved via hooks, 20 events subscribed. Runs offline.
 - `bindings/node`: napi-rs crate (workspace member), JSON-string `Coordinator` surface (open/close/publish/claim/plan_goal/assign/goal_progress/events_since/sweep_expired); u64 crosses as BigInt (napi-rs refuses lossy Number), needs `napi6` feature; poisoned registry mutex recovers. `test.js` drives a full loop from JS: 20 events, goal 2/2, error paths verified.
 - 144/144 green, clippy -D warnings + fmt clean workspace-wide. Committed `1f34ff3`.
+
+## Runaway-cost kill-switch (D25)
+
+- `CostRecorded{agent_id, task_id?, input_tokens, output_tokens}` event; fold accumulates `cost_by_agent`/`cost_by_task` (+ `Agent.budget_used_tokens`), lenient on unknown agents; spend verified durable across reopen.
+- `CostPolicy{per_turn/per_task/per_agent_tokens_max}` (`unlimited()` default): pre-turn agent skip (no claim, `budget_breached`), pre-turn task fail without burning a turn, post-turn fail on any breach — always `Failed` with reason `budget-exceeded`, spend recorded first. Threaded through `drive_goal`, `drive_head` (`HeadConfig.cost_policy`), host `drive_with_policy` (`drive` unchanged). Soft `token_budget_per_agent` skip kept (different action).
+- `FailureKind::RunawayCost` (Specification) tags exactly the kill-switch reason. New eval scenario `driven-budget` with gate (1 failed / 1 spec / 1 verification). Mid-turn token kill stays timeout-based (D19) — documented.
+- 152/152 green (8 new), clippy -D warnings + fmt clean, node conformance + sample re-verified. Committed `e0d6166`.

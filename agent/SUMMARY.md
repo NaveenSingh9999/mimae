@@ -45,3 +45,8 @@
 
 - Protocol version negotiation enforced on the daemon socket; sample ADE host example runs offline; first language binding (Node) drives a full coordination loop from JS and passes.
 - 144/144 green, clippy/fmt clean workspace-wide. Committed `1f34ff3`.
+
+## Runaway-cost kill-switch (D25)
+
+- Durable spend ledger + hard caps with fail-closed breach semantics; eval tags runaway cost. Mid-turn kill remains timeout-based (documented limitation).
+- 152/152 green, clippy/fmt clean. Committed `e0d6166`.
