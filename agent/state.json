@@ -19,7 +19,10 @@
     "Section 17 open questions mostly resolved via DECISIONS.md D1-D13; remaining OPEN: gate4agent evaluation result, Antigravity CLI control surface, Qwen Code channels"
   ],
   "next_steps": [
-    "Step 5: deterministic coordinator against fake agents",
-    "Step 6: fake agent harness for deterministic core testing"
+    "Step 5: Adapter contract + normalized Session vocabulary (per-CLI driving traits: start, turn, interrupt, resume, permission resolution, capability declaration)",
+    "Step 6: OpenCode T3 adapter over `opencode serve` with conformance test on this device",
+    "Step 7: Claude Code T2 headless JSON/stream-json adapter + hooks (code-ready, live conformance later on a box with claude installed)",
+    "Step 8: Antigravity CLI adapter after verifying its driver surface",
+    "Step 9: gate4agent prior-art evaluation (D3)"
   ]
 }
