@@ -17,11 +17,17 @@ lifecycle to a temp event log under `${TMPDIR}/mimae-e2e-*`.
 
 Three surfaces, in order of preference:
 
-1. **Rust library** (primary). Add `mimae-core` as a dependency and drive
-   `Coordinator` directly: `Coordinator::open(path, EventLogOptions::default())`,
-   then `publish`, `claim`, `plan_goal`, `assign`, gates, and views. All
+1. **Rust library / agentic framework** (primary). Add `mimae-core` as a
+   dependency and embed the `Mimae` facade: `Mimae::open(path)` owns the
+   `Coordinator`, `Mimae::register_agent` attaches one `AgentAdapter` per
+   session, `submit_goal` runs deterministic planning, `drive` runs the
+   head loop, and `poll_approvals` / `drain_notifications` / `drain_events`
+   surface gates, escalations, and the event stream to your UI. Implement
+   `HostHooks` (`on_approval`, `on_escalation`, `on_event`) for the human
+   callbacks in §9.9; the default `NoHooks` approves everything. Raw
+   `Coordinator` access remains available for custom orchestration. All
    coordination state lives in the append-only log at `path`; reopening the
-   same path replays it exactly. No global state: multiple `Coordinator`
+   same path replays it exactly. No global state: multiple `Mimae`
    instances coexist in one process.
 2. **Local daemon.** `cargo run --bin mimae-daemon -- --port <port> --log <path>`
    serves newline-delimited JSON-RPC 2.0 on loopback TCP for non-Rust hosts

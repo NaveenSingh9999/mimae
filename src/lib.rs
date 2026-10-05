@@ -12,6 +12,7 @@ pub mod entities;
 pub mod eval;
 pub mod event;
 pub mod graph;
+pub mod host;
 pub mod ids;
 pub mod log;
 pub mod mimo;
@@ -40,6 +41,7 @@ pub use eval::{
 };
 pub use event::{Event, EventPayload, KnownPayload, PROTOCOL_VERSION};
 pub use graph::{ClaimError, FoldError, TaskGraph};
+pub use host::{HostHooks, Mimae, NoHooks};
 pub use ids::*;
 pub use log::{Durability, EventLog, EventLogOptions, EventStore, EventStream, LogError, OpenInfo};
 pub use mimo::MimoAdapter;
