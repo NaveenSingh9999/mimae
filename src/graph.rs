@@ -34,6 +34,8 @@ pub enum FoldError {
         agent_id: AgentId,
         actual: AgentState,
     },
+    #[error("message body length {len} exceeds limit {limit}")]
+    MessageTooLong { len: usize, limit: usize },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -211,6 +213,13 @@ impl TaskGraph {
                     });
                 }
                 agent.state = to.clone();
+            }
+            KnownPayload::MessageSent { message } => {
+                if let Err(crate::entities::MessageError::BodyTooLong { len, limit }) =
+                    message.validate()
+                {
+                    return Err(FoldError::MessageTooLong { len, limit });
+                }
             }
             _ => {}
         }

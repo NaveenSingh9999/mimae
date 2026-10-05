@@ -58,6 +58,7 @@ pub trait EventStore {
 pub struct EventStream {
     lines: std::io::Lines<BufReader<File>>,
     line_no: usize,
+    failed: bool,
 }
 
 impl Iterator for EventStream {
@@ -65,6 +66,9 @@ impl Iterator for EventStream {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
+            if self.failed {
+                return None;
+            }
             match self.lines.next() {
                 Some(Ok(line)) => {
                     self.line_no += 1;
@@ -78,7 +82,10 @@ impl Iterator for EventStream {
                         }
                     }));
                 }
-                Some(Err(err)) => return Some(Err(LogError::Io(err))),
+                Some(Err(err)) => {
+                    self.failed = true;
+                    return Some(Err(LogError::Io(err)));
+                }
                 None => return None,
             }
         }
@@ -227,6 +234,7 @@ impl EventStore for EventLog {
         Ok(EventStream {
             lines: BufReader::new(File::open(&self.path)?).lines(),
             line_no: 0,
+            failed: false,
         })
     }
 
