@@ -70,3 +70,10 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - `IntegrationGate::run_check` took no timeout and inherited stdio: a hung check would block the gate forever and a chatty one could deadlock on a full pipe. Now `run_check(dir, program, args, timeout)` polls `try_wait`, kills on deadline, returns `CheckOutcome::{Passed, Failed, TimedOut}`, stdio nulled. Covered by a real `sleep 30` kill test.
 - Verified no other unbounded subprocess waits: adapter turns go through `run_bounded_turn`, opencode HTTP calls carry per-call timeouts.
 - md conformance re-checked: task lifecycle, message taxonomy, dispatch gate, D16 late-join, lease semantics all match; Artifact/Gate entities intentionally deferred to Phase 7.
+
+## Phase 5 — messaging/context
+
+- src/router.rs: scope/contract-aware routing (explicit recipients + affected owners), priority-ordered inboxes, delivery tiers per §9.3 (Interrupt for blocker/escalation and in-flight contract changes, Hook for contracts, NextTurn, NewTurn for idle, Digested batching for status_milestone), anti-jam (per-sender/kind rate limits, fingerprint dedupe with cap, broadcast rejection except human/host).
+- src/context.rs: curated briefs (task + scope + goal acceptance + relevant contracts + decision digest + peer ownership, never peer histories), clean-context reviews, digest rendering, byte-budget test.
+- TaskGraph folds GoalSubmitted/DecisionRecorded; Router owned by Coordinator, fed on every MessageSent publish and rebuilt identically on reopen (tested).
+- tests/router.rs (9) + tests/context.rs (4). 82/82 total green, clippy -D warnings clean, fmt clean.
