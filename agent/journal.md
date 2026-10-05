@@ -51,3 +51,11 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - src/opencode.rs: OpenCodeAdapter implements AgentAdapter over opencode's local server API (ureq blocking client). start_session{ _cwd tolerated; server runs in spawn_local cwd } → POST /session {title, permission?}; send_turn → POST /session/:id/message with text parts; map_message_parts projects OpenCode message.parts directly onto SessionEvent (text → Ok, tool → ToolUse+ToolResult, step-finish → Usage, unknown → Ok with raw json); interrupt → POST /session/:id/abort; resume → GET /session/:id; inject_context → POST .../message noReply=true; Drop kills the child server it spawned.
 - req timeouts calibrated per call (3s health, 10s resume/inject, 60s turn). Health check polls every 200ms for at most 20s during spawn.
 - tests/opencode.rs: capabilities contract smoke test (always) + live-session test gated on `which opencode` returning 0 (spawn_local+start_session+send_turn+interrupt+liveness+inject). Live session took ~57s for a real-model turn, fully green on 2026-10-05 device.
+
+## Planner/contract loop (f54b035)
+
+- src/planner.rs: deterministic plan validation runs fully before any append (empty goal, duplicate/unknown tasks and contracts, dep cycles via DFS, overlapping write scopes with glob-prefix normalization among parallel tasks including plan-vs-active, shared-interface contract coverage). Publishes GoalSubmitted → TaskCreated (topological) → ContractProposed with causal seq chaining and a PlanReceipt.
+- Contract exchange: propose/accept/change with version-staleness checks; DecisionRecorded passthrough.
+- Assignment: next_assignment picks first ready task (deterministic TaskId order) matching agent capabilities; assign claims through Coordinator (team gate enforced); goal_progress counts done/failed with is_complete.
+- TaskGraph folds contracts now; ContractStatus is Copy like the other small enums.
+- tests/planner.rs: 6 tests. 59/59 total green, clippy -D warnings clean, fmt clean.
