@@ -69,6 +69,17 @@ impl Coordinator {
         self.log.high_water_seq()
     }
 
+    pub fn events_since(&self, seq: u64) -> Result<Vec<Event>, CoreError> {
+        let mut out = Vec::new();
+        for event in self.log.stream()? {
+            let event = event?;
+            if event.seq > seq {
+                out.push(event);
+            }
+        }
+        Ok(out)
+    }
+
     fn rebuild_views(&mut self) -> Result<(), CoreError> {
         self.graph = TaskGraph::new();
         self.team = TeamRegistry::new();

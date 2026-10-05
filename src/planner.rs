@@ -6,9 +6,10 @@ use crate::entities::{
 };
 use crate::event::{Event, EventPayload, KnownPayload};
 use crate::ids::{AgentId, ContractId, GoalId, TaskId};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanTask {
     pub id: TaskId,
     pub title: String,
@@ -20,7 +21,7 @@ pub struct PlanTask {
     pub interfaces: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanContract {
     pub id: ContractId,
     pub parties: Vec<TaskId>,
@@ -28,14 +29,14 @@ pub struct PlanContract {
     pub version: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanReceipt {
     pub goal_seq: u64,
     pub task_seqs: Vec<(TaskId, u64)>,
     pub contract_seqs: Vec<(ContractId, u64)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoalProgress {
     pub total: usize,
     pub done: usize,
