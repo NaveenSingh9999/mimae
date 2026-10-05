@@ -102,3 +102,8 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 
 - src/drive.rs: deterministic head cycle using planner assignment + adapter turns; failed turns mark tasks Failed; goal loop exits on completion or round cap.
 - tests/drive.rs (4). 105/105 total green, clippy -D warnings clean, fmt clean.
+
+## Eval driven-goal follow-up
+
+- 3 new scenarios in tests/eval.rs compose drive_goal with the metrics harness: full two-agent completion, stall (direct claim, no turn) → sweep → reclaim with reclaims=1/lease_expiries=1, and a discovery message whose seq latency is measured through completion.
+- 114/114 total green, clippy -D warnings clean, fmt clean.
