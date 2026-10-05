@@ -248,3 +248,116 @@ fn drive_unknown_agent_is_an_error() {
     assert!(matches!(err, DriveError::Plan(PlanError::NoSuchAgent(_))));
     drop(coord);
 }
+
+fn usage_turn(input: u64, output: u64) -> Vec<SessionEvent> {
+    vec![
+        SessionEvent::Usage {
+            input_tokens: input,
+            output_tokens: output,
+        },
+        SessionEvent::TurnComplete { ok: true },
+    ]
+}
+
+#[test]
+fn head_completes_goal_with_report() {
+    let mut coord = setup("head-complete", &[1, 2]);
+    plan_two_tasks(&mut coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(ok_turn());
+    a1.push(ok_turn());
+    let a2 = ScriptAdapter::default();
+    a2.push(ok_turn());
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> = vec![
+        (AgentId::new(1), Box::new(a1)),
+        (AgentId::new(2), Box::new(a2)),
+    ];
+    let report = drive_head(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        HeadConfig::default(),
+    )
+    .unwrap();
+    assert!(report.progress.is_complete());
+    assert_eq!(report.progress.done, 2);
+    assert!(report.over_budget.is_empty());
+    assert!(report.stalled.is_empty());
+    assert!(report.failed_tasks.is_empty());
+    drop(coord);
+}
+
+#[test]
+fn head_enforces_token_budget() {
+    let mut coord = setup("head-budget", &[1]);
+    plan_two_tasks(&mut coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(10, 5));
+    a1.push(usage_turn(10, 5));
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> = vec![(AgentId::new(1), Box::new(a1))];
+    let report = drive_head(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        HeadConfig {
+            max_rounds: 10,
+            stuck_threshold: 3,
+            token_budget_per_agent: Some(10),
+        },
+    )
+    .unwrap();
+    assert_eq!(report.over_budget, vec![AgentId::new(1)]);
+    assert!(!report.progress.is_complete());
+    assert_eq!(report.progress.done, 1);
+    drop(coord);
+}
+
+#[test]
+fn head_flags_stalled_agent() {
+    let mut coord = setup("head-stalled", &[1]);
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> =
+        vec![(AgentId::new(1), Box::new(ScriptAdapter::default()))];
+    let report = drive_head(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        HeadConfig::default(),
+    )
+    .unwrap();
+    assert_eq!(report.rounds, 3);
+    assert_eq!(report.stalled, vec![AgentId::new(1)]);
+    assert!(!report.progress.is_complete());
+    drop(coord);
+}
+
+#[test]
+fn head_collects_failed_tasks() {
+    let mut coord = setup("head-failed", &[1]);
+    plan_two_tasks(&mut coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(vec![
+        SessionEvent::Error {
+            message: "boom".into(),
+        },
+        SessionEvent::TurnComplete { ok: false },
+    ]);
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> = vec![(AgentId::new(1), Box::new(a1))];
+    let report = drive_head(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        HeadConfig::default(),
+    )
+    .unwrap();
+    assert_eq!(report.failed_tasks, vec![TaskId::new(1)]);
+    assert!(!report.progress.is_complete());
+    drop(coord);
+}

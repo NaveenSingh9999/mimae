@@ -20,12 +20,39 @@ pub struct TurnReport {
     pub assigned: Option<TaskId>,
     pub turn_ok: bool,
     pub completed: bool,
+    pub tokens_used: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DriveReport {
     pub rounds: u32,
     pub progress: GoalProgress,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeadConfig {
+    pub max_rounds: u32,
+    pub stuck_threshold: u32,
+    pub token_budget_per_agent: Option<u64>,
+}
+
+impl Default for HeadConfig {
+    fn default() -> Self {
+        Self {
+            max_rounds: 10,
+            stuck_threshold: 3,
+            token_budget_per_agent: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeadReport {
+    pub rounds: u32,
+    pub progress: GoalProgress,
+    pub over_budget: Vec<AgentId>,
+    pub stalled: Vec<AgentId>,
+    pub failed_tasks: Vec<TaskId>,
 }
 
 fn advance(
@@ -63,6 +90,7 @@ pub fn drive_agent_turn(
             assigned: None,
             turn_ok: false,
             completed: false,
+            tokens_used: 0,
         });
     };
     let (claimed, _) = assign(coordinator, agent_id, now_ms, ttl_ms)?;
@@ -74,9 +102,21 @@ pub fn drive_agent_turn(
         .map(|task| task.brief.clone())
         .unwrap_or_default();
     let events = adapter.send_turn(&brief);
-    let turn_ok = events
-        .iter()
-        .any(|event| matches!(event, SessionEvent::TurnComplete { ok: true }));
+    let mut tokens_used = 0u64;
+    let mut turn_ok = false;
+    for event in &events {
+        match event {
+            SessionEvent::Usage {
+                input_tokens,
+                output_tokens,
+            } => {
+                tokens_used =
+                    tokens_used.saturating_add(input_tokens.saturating_add(*output_tokens));
+            }
+            SessionEvent::TurnComplete { ok: true } => turn_ok = true,
+            _ => {}
+        }
+    }
     if turn_ok {
         advance(
             coordinator,
@@ -120,6 +160,7 @@ pub fn drive_agent_turn(
         assigned: Some(task_id),
         turn_ok,
         completed: turn_ok,
+        tokens_used,
     })
 }
 
@@ -144,5 +185,79 @@ pub fn drive_goal(
     Ok(DriveReport {
         rounds,
         progress: goal_progress(coordinator, goal_id),
+    })
+}
+
+pub fn drive_head(
+    coordinator: &mut Coordinator,
+    agents: &mut [(AgentId, Box<dyn AgentAdapter>)],
+    goal_id: GoalId,
+    now_ms: u64,
+    ttl_ms: u64,
+    config: HeadConfig,
+) -> Result<HeadReport, DriveError> {
+    use std::collections::HashMap;
+    let mut spent: HashMap<AgentId, u64> = HashMap::new();
+    let mut idle_streak: HashMap<AgentId, u32> = HashMap::new();
+    let mut over_budget: Vec<AgentId> = Vec::new();
+    let mut rounds = 0;
+    let mut idle_rounds = 0u32;
+    let idle_limit = config.stuck_threshold.max(1);
+    while rounds < config.max_rounds {
+        rounds += 1;
+        let mut assigned_this_round = false;
+        for (agent_id, adapter) in agents.iter_mut() {
+            if over_budget.contains(agent_id) {
+                continue;
+            }
+            let report =
+                drive_agent_turn(coordinator, *agent_id, adapter.as_mut(), now_ms, ttl_ms)?;
+            if let Some(budget) = config.token_budget_per_agent {
+                let total = spent.entry(*agent_id).or_insert(0);
+                *total = total.saturating_add(report.tokens_used);
+                if *total > budget && !over_budget.contains(agent_id) {
+                    over_budget.push(*agent_id);
+                }
+            }
+            if report.assigned.is_some() {
+                assigned_this_round = true;
+                idle_streak.insert(*agent_id, 0);
+            } else {
+                *idle_streak.entry(*agent_id).or_insert(0) += 1;
+            }
+        }
+        if goal_progress(coordinator, goal_id).is_complete() {
+            break;
+        }
+        if assigned_this_round {
+            idle_rounds = 0;
+        } else {
+            idle_rounds += 1;
+            if idle_rounds >= idle_limit {
+                break;
+            }
+        }
+    }
+    let threshold = config.stuck_threshold.max(1);
+    let mut stalled: Vec<AgentId> = idle_streak
+        .iter()
+        .filter_map(|(id, streak)| (*streak >= threshold).then_some(*id))
+        .collect();
+    stalled.sort_by_key(|id| id.get());
+    over_budget.sort_by_key(|id| id.get());
+    let mut failed_tasks: Vec<TaskId> = coordinator
+        .graph()
+        .tasks
+        .values()
+        .filter(|task| task.goal_id == goal_id && task.status == TaskStatus::Failed)
+        .map(|task| task.id)
+        .collect();
+    failed_tasks.sort_by_key(|id| id.get());
+    Ok(HeadReport {
+        rounds,
+        progress: goal_progress(coordinator, goal_id),
+        over_budget,
+        stalled,
+        failed_tasks,
     })
 }
