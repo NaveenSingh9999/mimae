@@ -41,7 +41,8 @@ pub use drive::{
 };
 pub use entities::*;
 pub use eval::{
-    Baseline, ScenarioMetrics, ScenarioReport, collect_metrics, compare_message_cost, report,
+    Baseline, PromotionGate, ScenarioMetrics, ScenarioReport, Violation, collect_metrics,
+    compare_message_cost, report,
 };
 pub use event::{Event, EventPayload, KnownPayload, PROTOCOL_VERSION};
 pub use failures::{

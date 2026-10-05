@@ -1,4 +1,5 @@
 use crate::event::KnownPayload;
+use crate::failures::{FailureTag, summarize};
 use crate::ids::TaskId;
 use crate::log::{EventLogOptions, EventStore};
 use std::collections::HashMap;
@@ -136,4 +137,158 @@ pub fn compare_message_cost(reports: &[ScenarioReport]) -> String {
         ));
     }
     out
+}
+
+/// One breached promotion threshold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Violation {
+    /// Metric or tag category that breached, e.g. `"tasks_failed"`.
+    pub field: &'static str,
+    pub actual: String,
+    pub allowed: String,
+}
+
+impl Violation {
+    fn over(
+        field: &'static str,
+        actual: impl std::fmt::Display,
+        allowed: impl std::fmt::Display,
+    ) -> Self {
+        Self {
+            field,
+            actual: actual.to_string(),
+            allowed: allowed.to_string(),
+        }
+    }
+}
+
+/// Pass/fail thresholds a scenario must meet for promotion (adapter
+/// graduation, CI gating). Each scenario declares its own gate: a clean run
+/// uses [`PromotionGate::strict`], while a recovery scenario explicitly
+/// allows the expiry/reclaim/tag it is designed to exercise. Allowances are
+/// always deliberate, never silent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PromotionGate {
+    pub require_success: bool,
+    pub max_tasks_failed: usize,
+    pub max_human_interventions: u32,
+    pub max_lease_expiries: usize,
+    pub max_reclaims: usize,
+    /// Cap on total coordination messages, if the scenario pins volume.
+    pub max_messages: Option<usize>,
+    /// Cap on discovery-to-action latency in log seqs, if measured.
+    pub max_discovery_latency_seqs: Option<f64>,
+    pub max_specification_tags: usize,
+    pub max_misalignment_tags: usize,
+    pub max_verification_tags: usize,
+}
+
+impl Default for PromotionGate {
+    /// Strictest gate: success with zero failures, zero human touch, zero
+    /// lease churn, and zero failure tags of any MAST category.
+    fn default() -> Self {
+        Self::strict()
+    }
+}
+
+impl PromotionGate {
+    pub fn strict() -> Self {
+        Self {
+            require_success: true,
+            max_tasks_failed: 0,
+            max_human_interventions: 0,
+            max_lease_expiries: 0,
+            max_reclaims: 0,
+            max_messages: None,
+            max_discovery_latency_seqs: None,
+            max_specification_tags: 0,
+            max_misalignment_tags: 0,
+            max_verification_tags: 0,
+        }
+    }
+
+    /// Check a finished [`ScenarioReport`] plus its [`FailureTag`]s against
+    /// the thresholds. Empty output means promoted.
+    pub fn check(&self, report: &ScenarioReport, tags: &[FailureTag]) -> Vec<Violation> {
+        let mut violations = Vec::new();
+        let m = &report.metrics;
+        if self.require_success && !report.success {
+            violations.push(Violation::over("success", report.success, true));
+        }
+        if m.tasks_failed > self.max_tasks_failed {
+            violations.push(Violation::over(
+                "tasks_failed",
+                m.tasks_failed,
+                format!("<= {}", self.max_tasks_failed),
+            ));
+        }
+        if m.human_interventions > self.max_human_interventions {
+            violations.push(Violation::over(
+                "human_interventions",
+                m.human_interventions,
+                format!("<= {}", self.max_human_interventions),
+            ));
+        }
+        if m.lease_expiries > self.max_lease_expiries {
+            violations.push(Violation::over(
+                "lease_expiries",
+                m.lease_expiries,
+                format!("<= {}", self.max_lease_expiries),
+            ));
+        }
+        if m.reclaims > self.max_reclaims {
+            violations.push(Violation::over(
+                "reclaims",
+                m.reclaims,
+                format!("<= {}", self.max_reclaims),
+            ));
+        }
+        if let Some(cap) = self.max_messages
+            && m.message_count > cap
+        {
+            violations.push(Violation::over(
+                "message_count",
+                m.message_count,
+                format!("<= {cap}"),
+            ));
+        }
+        if let Some(cap) = self.max_discovery_latency_seqs {
+            match m.discovery_latency_avg_seqs {
+                Some(latency) if latency > cap => violations.push(Violation::over(
+                    "discovery_latency_avg_seqs",
+                    latency,
+                    format!("<= {cap}"),
+                )),
+                None => violations.push(Violation::over(
+                    "discovery_latency_avg_seqs",
+                    "unmeasured",
+                    format!("measured and <= {cap}"),
+                )),
+                _ => {}
+            }
+        }
+        let counts = summarize(tags);
+        if counts.specification > self.max_specification_tags as u64 {
+            violations.push(Violation::over(
+                "specification_tags",
+                counts.specification,
+                format!("<= {}", self.max_specification_tags),
+            ));
+        }
+        if counts.misalignment > self.max_misalignment_tags as u64 {
+            violations.push(Violation::over(
+                "misalignment_tags",
+                counts.misalignment,
+                format!("<= {}", self.max_misalignment_tags),
+            ));
+        }
+        if counts.verification > self.max_verification_tags as u64 {
+            violations.push(Violation::over(
+                "verification_tags",
+                counts.verification,
+                format!("<= {}", self.max_verification_tags),
+            ));
+        }
+        violations
+    }
 }

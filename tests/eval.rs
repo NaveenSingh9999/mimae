@@ -73,6 +73,19 @@ fn ev(payload: KnownPayload) -> EventPayload {
     EventPayload::Known(payload)
 }
 
+/// Promotion gate for a finished scenario: re-opens the scenario log, tags
+/// failures, and fails the test on any threshold breach.
+fn assert_gate(path: &Path, report: &ScenarioReport, gate: PromotionGate) {
+    let (log, _) = EventLog::open(path, EventLogOptions::default()).unwrap();
+    let tags = tag_failures(&log).unwrap();
+    let violations = gate.check(report, &tags);
+    assert!(
+        violations.is_empty(),
+        "promotion gate violations for {}: {violations:?}",
+        report.name
+    );
+}
+
 fn setup_team(coord: &mut Coordinator, members: &[u64], head: u64) {
     coord
         .publish(
@@ -296,6 +309,7 @@ fn eval_conflicting_pair_replans_with_contract() {
     let report = report("conflicting-pair", &path, 5, true).unwrap();
     assert!(report.success);
     assert_eq!(report.metrics.tasks_done, 2);
+    assert_gate(&path, &report, PromotionGate::strict());
 }
 
 #[test]
@@ -372,6 +386,9 @@ fn eval_contract_change_midflight() {
     drop(coord);
     let report = report("contract-midflight", &path, 5, true).unwrap();
     assert!(report.success);
+    // The change request travels as a message; no ContractChanged event fires
+    // (terms never moved under running work), so the strict gate holds.
+    assert_gate(&path, &report, PromotionGate::strict());
 }
 
 #[test]
@@ -408,6 +425,18 @@ fn eval_heartbeat_death_reclaim() {
     assert_eq!(report.metrics.tasks_done, 1);
     assert_eq!(report.metrics.lease_expiries, 1);
     assert_eq!(report.metrics.reclaims, 1);
+    // Recovery scenario: the single expiry/reclaim (and its lease tag) is
+    // the exercised behavior, so it is explicitly allowed.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_lease_expiries: 1,
+            max_reclaims: 1,
+            max_specification_tags: 1,
+            ..PromotionGate::strict()
+        },
+    );
 }
 
 #[test]
@@ -448,6 +477,17 @@ fn eval_crash_recovery_zero_loss() {
     assert!(report.success);
     assert_eq!(report.metrics.tasks_done, 1);
     assert_eq!(report.metrics.human_interventions, 0);
+    // Recovery scenario: the crash surfaces as one lease expiry + reclaim.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_lease_expiries: 1,
+            max_reclaims: 1,
+            max_specification_tags: 1,
+            ..PromotionGate::strict()
+        },
+    );
 }
 
 #[test]
@@ -518,6 +558,7 @@ fn eval_solo_to_trio_late_join() {
     let report = report("solo-to-trio", &path, 5, true).unwrap();
     assert!(report.success);
     assert_eq!(report.metrics.tasks_done, 3);
+    assert_gate(&path, &report, PromotionGate::strict());
 }
 
 #[test]
@@ -577,6 +618,16 @@ fn eval_reviewer_cap_escalation() {
     drop(coord);
     let report = report("reviewer-cap", &path, 5, true).unwrap();
     assert!(report.success);
+    // Three reviewer rejections are the exercised behavior; each tags
+    // GateFailed (verification). The loop cap itself holds — no fourth tag.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_verification_tags: 3,
+            ..PromotionGate::strict()
+        },
+    );
 }
 
 #[test]
@@ -605,6 +656,17 @@ fn eval_injection_quarantined() {
     let report = report("injection", &path, 5, true).unwrap();
     assert!(report.success);
     assert_eq!(report.metrics.message_count, 1);
+    // The quarantined payload tags PromptInjection (specification); the
+    // message cap pins the single-message volume.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_messages: Some(1),
+            max_specification_tags: 1,
+            ..PromotionGate::strict()
+        },
+    );
 }
 
 #[test]
@@ -666,6 +728,7 @@ fn eval_blocker_interrupt_routing() {
     drop(coord);
     let report = report("blocker-routing", &path, 5, true).unwrap();
     assert!(report.success);
+    assert_gate(&path, &report, PromotionGate::strict());
 }
 
 #[test]
@@ -698,6 +761,15 @@ fn eval_milestone_flood_digest() {
     let report = report("milestone-flood", &path, 5, true).unwrap();
     assert!(report.success);
     assert_eq!(report.metrics.message_count, 100);
+    // Digestion absorbs the flood: no failure tags, volume pinned at 100.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_messages: Some(100),
+            ..PromotionGate::strict()
+        },
+    );
 }
 
 #[test]
@@ -827,11 +899,23 @@ fn eval_convoy_release_order() {
     assert!(report.success);
     assert_eq!(report.metrics.tasks_done, 3);
     assert_eq!(report.metrics.reclaims, 3);
+    // Convoy recovery: three expiries/reclaims (and their lease tags) are
+    // the exercised behavior.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_lease_expiries: 3,
+            max_reclaims: 3,
+            max_specification_tags: 3,
+            ..PromotionGate::strict()
+        },
+    );
 }
 
 #[test]
 fn eval_baselines_compare_costs() {
-    let mut reports = Vec::new();
+    let mut reports: Vec<(ScenarioReport, PathBuf)> = Vec::new();
     for (name, baseline) in [
         ("solo", Baseline::Solo),
         ("mimae", Baseline::Mimae),
@@ -1025,20 +1109,37 @@ fn eval_baselines_compare_costs() {
         }
         let wall_ms = start.elapsed().as_millis() as u64;
         drop(coord);
-        reports.push(report(name, &path, wall_ms, true).unwrap());
+        reports.push((report(name, &path, wall_ms, true).unwrap(), path));
     }
-    assert!(reports.iter().all(|r| r.success));
-    let solo = &reports[0];
-    let mimae = &reports[1];
-    let naive = &reports[2];
+    assert!(reports.iter().all(|r| r.0.success));
+    let solo = &reports[0].0;
+    let mimae = &reports[1].0;
+    let naive = &reports[2].0;
     assert_eq!(solo.metrics.message_count, 0);
     assert!(mimae.metrics.message_count < naive.metrics.message_count);
     assert_eq!(mimae.metrics.tasks_done, 2);
     assert_eq!(naive.metrics.tasks_done, 2);
-    let table = compare_message_cost(&reports);
+    let table = compare_message_cost(
+        &reports
+            .iter()
+            .map(|(report, _)| report.clone())
+            .collect::<Vec<_>>(),
+    );
     assert!(table.contains("solo"));
     assert!(table.contains("mimae"));
     assert!(table.contains("naive"));
+    // Promotion across baselines: every baseline runs clean, and Mimae must
+    // additionally beat naive-chat on message volume.
+    assert_gate(&reports[0].1, solo, PromotionGate::strict());
+    assert_gate(
+        &reports[1].1,
+        mimae,
+        PromotionGate {
+            max_messages: Some(naive.metrics.message_count.saturating_sub(1)),
+            ..PromotionGate::strict()
+        },
+    );
+    assert_gate(&reports[2].1, naive, PromotionGate::strict());
 }
 
 struct ScriptAdapter {
@@ -1162,6 +1263,7 @@ fn eval_driven_goal_two_agents_complete() {
     assert!(report.success);
     assert_eq!(report.metrics.tasks_done, 2);
     assert_eq!(report.metrics.human_interventions, 0);
+    assert_gate(&path, &report, PromotionGate::strict());
 }
 
 #[test]
@@ -1201,6 +1303,17 @@ fn eval_driven_goal_stall_reclaim() {
     assert_eq!(report.metrics.tasks_done, 2);
     assert_eq!(report.metrics.lease_expiries, 1);
     assert_eq!(report.metrics.reclaims, 1);
+    // Recovery scenario: the stall surfaces as one expiry + reclaim.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_lease_expiries: 1,
+            max_reclaims: 1,
+            max_specification_tags: 1,
+            ..PromotionGate::strict()
+        },
+    );
 }
 
 #[test]
@@ -1238,4 +1351,14 @@ fn eval_driven_goal_discovery_latency() {
     let latency = report.metrics.discovery_latency_avg_seqs.unwrap();
     assert!(latency > 0.0);
     assert_eq!(report.metrics.tasks_done, 2);
+    // Latency cap is a generous tripwire (scripted run measures a handful
+    // of seqs); it guards against pathological blowup, not exact values.
+    assert_gate(
+        &path,
+        &report,
+        PromotionGate {
+            max_discovery_latency_seqs: Some(100.0),
+            ..PromotionGate::strict()
+        },
+    );
 }
