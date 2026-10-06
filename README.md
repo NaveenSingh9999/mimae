@@ -1,5 +1,12 @@
 # Mimae
 
+> [!TIP]
+> **Just want it running?** Use the [AI build prompt](BUILD_PROMPT.md) —
+> paste it into a coding assistant and it has the full spec, invariants,
+> protocol, and acceptance criteria. Prefer to do it by hand?
+> [`SETUP.md`](SETUP.md) walks through prerequisites, tests, examples,
+> the daemon, the Node binding, and each embedding option step by step.
+
 Mimae dispenses with the middleman between projects and the coding
 agents working on them. You point it at a goal and a repo; it decomposes
 the goal, assigns tasks, brokers leases and contracts, runs verification
@@ -108,4 +115,4 @@ state-changing call, `-32002` otherwise.
 
 ## License
 
-MIT OR Apache-2.0.
+**License:** MIT OR Apache-2.0
