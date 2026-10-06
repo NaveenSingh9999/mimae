@@ -37,7 +37,7 @@ pub use coordinator::{Coordinator, CoreError};
 pub use daemon::{handle_request, serve};
 pub use drive::{
     BUDGET_EXCEEDED_REASON, CostPolicy, DriveError, DriveReport, HeadConfig, HeadReport,
-    TURN_TIMEOUT_REASON, TurnReport, drive_agent_turn, drive_goal, drive_head,
+    TURN_TIMEOUT_REASON, TurnReport, drive_agent_turn, drive_goal, drive_head, goal_spend,
 };
 pub use entities::*;
 pub use eval::{

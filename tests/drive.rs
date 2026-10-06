@@ -963,3 +963,85 @@ fn drive_without_monitoring_streams_no_samples() {
     assert_eq!(cost_events(&coord), 1);
     drop(coord);
 }
+
+#[test]
+fn drive_per_goal_budget_caps_goal() {
+    let mut coord = setup("cost-per-goal", &[1]);
+    // Goal budget: 100 tokens. PlanTask shape mirrors plan_two_tasks but
+    // with an explicit cap.
+    plan_goal(
+        &mut coord,
+        Goal {
+            id: GoalId::new(10),
+            text: "ship".into(),
+            acceptance: vec!["done".into()],
+            constraints: vec![],
+            budget: Budget {
+                max_tokens: 100,
+                deadline_ms: None,
+            },
+        },
+        vec![
+            PlanTask {
+                id: TaskId::new(1),
+                title: "a".into(),
+                brief: "do a".into(),
+                capability: Capability::new("backend"),
+                write_scope: WriteScope {
+                    paths: vec!["src/a".into()],
+                },
+                deps: vec![],
+                verification: Verification::None,
+                interfaces: vec![],
+            },
+            PlanTask {
+                id: TaskId::new(2),
+                title: "b".into(),
+                brief: "do b".into(),
+                capability: Capability::new("backend"),
+                write_scope: WriteScope {
+                    paths: vec!["src/b".into()],
+                },
+                deps: vec![TaskId::new(1)],
+                verification: Verification::None,
+                interfaces: vec![],
+            },
+        ],
+        vec![],
+        10,
+    )
+    .unwrap();
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(60, 0));
+    a1.push(usage_turn(60, 0));
+    let mut agents: Vec<(AgentId, Box<dyn AgentAdapter>)> = vec![(AgentId::new(1), Box::new(a1))];
+    let report = drive_goal(
+        &mut coord,
+        &mut agents,
+        GoalId::new(10),
+        100,
+        60_000,
+        10,
+        &CostPolicy::unlimited(),
+    )
+    .unwrap();
+    // Turn 1 costs 60 (goal total 60, under 100) and completes. Turn 2
+    // costs 60 more: goal total 120 breaches the 100 cap, so task 2 fails
+    // closed — Mimae spent past the brief's runaway-cost budget.
+    assert_eq!(report.progress.done, 1);
+    assert_eq!(report.progress.failed, 1);
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Done
+    );
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(2)].status,
+        TaskStatus::Failed
+    );
+    assert_eq!(
+        failed_reason(&coord, 2).as_deref(),
+        Some(BUDGET_EXCEEDED_REASON)
+    );
+    assert_eq!(goal_spend(&coord, GoalId::new(10)), 120);
+    drop(coord);
+}

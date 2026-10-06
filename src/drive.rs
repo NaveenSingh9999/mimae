@@ -78,6 +78,10 @@ pub struct CostPolicy {
     /// Max cumulative tokens charged to one agent. An over-budget agent is
     /// skipped before claiming; a turn that pushes it over fails its task.
     pub per_agent_tokens_max: Option<u64>,
+    /// Max cumulative tokens across all tasks of one goal. When unset, the
+    /// goal's own `Budget::max_tokens` applies if it is non-zero. This is
+    /// the brief §9.8 "runaway cost" per-goal leg.
+    pub per_goal_tokens_max: Option<u64>,
     /// Mid-turn sample cadence in milliseconds. When set, the turn runs on
     /// a scoped worker thread while the drive loop samples
     /// [`AgentAdapter::sample_usage`] every tick, publishes a
@@ -101,6 +105,7 @@ impl CostPolicy {
             per_turn_tokens_max: None,
             per_task_tokens_max: None,
             per_agent_tokens_max: None,
+            per_goal_tokens_max: None,
             sample_every_ms: None,
             turn_wall_max_ms: None,
         }
@@ -113,6 +118,43 @@ impl CostPolicy {
     fn monitored(&self) -> bool {
         self.sample_every_ms.is_some() || self.turn_wall_max_ms.is_some()
     }
+}
+
+/// Total logged spend across every task of `goal_id` (the per-goal cap
+/// view). Sums the durable task ledger — no extra bookkeeping needed.
+pub fn goal_spend(coordinator: &Coordinator, goal_id: GoalId) -> u64 {
+    let goal_tasks: std::collections::HashSet<TaskId> = coordinator
+        .graph()
+        .tasks
+        .values()
+        .filter(|task| task.goal_id == goal_id)
+        .map(|task| task.id)
+        .collect();
+    coordinator
+        .graph()
+        .cost_by_task
+        .iter()
+        .filter(|(task_id, _)| goal_tasks.contains(task_id))
+        .map(|(_, tokens)| *tokens)
+        .fold(0u64, u64::saturating_add)
+}
+
+/// A goal's own budget applies when it asks for a real cap: `0` (the
+/// derived default) means "no per-goal cap", and `CostPolicy` overrides the
+/// goal when set.
+fn effective_goal_cap(
+    coordinator: &Coordinator,
+    goal_id: GoalId,
+    policy: &CostPolicy,
+) -> Option<u64> {
+    policy.per_goal_tokens_max.or_else(|| {
+        coordinator
+            .graph()
+            .goals
+            .get(&goal_id)
+            .map(|goal| goal.budget.max_tokens)
+            .filter(|cap| *cap > 0)
+    })
 }
 
 /// How a monitored turn ended.
@@ -362,6 +404,29 @@ pub fn drive_agent_turn(
             budget_breached: true,
         });
     }
+    // Per-goal leg (§9.8 runaway cost): over-budget goals do not burn more
+    // turns. Uses the goal's own Budget unless the policy overrides it.
+    let goal_id = coordinator
+        .graph()
+        .tasks
+        .get(&task_id)
+        .map(|task| task.goal_id);
+    if let Some(goal_id) = goal_id
+        && policy.over(
+            effective_goal_cap(coordinator, goal_id, policy),
+            goal_spend(coordinator, goal_id),
+        )
+    {
+        fail_budget(coordinator, task_id, now_ms)?;
+        return Ok(TurnReport {
+            agent: agent_id,
+            assigned: Some(task_id),
+            turn_ok: false,
+            completed: false,
+            tokens_used: 0,
+            budget_breached: true,
+        });
+    }
     let brief = coordinator
         .graph()
         .tasks
@@ -392,9 +457,9 @@ pub fn drive_agent_turn(
             _ => {}
         }
     }
-    // NOTE: token-based mid-turn kill needs usage streaming the CLIs do not
-    // provide; adapters that implement sample_usage get it via the sample
-    // loop above, the per-turn cap below is the post-turn backstop for all.
+    // NOTE: token-based mid-turn kill rides the sample loop above; the
+    // per-turn cap below is the post-turn backstop for adapters without a
+    // control handle.
     record_cost(coordinator, agent_id, task_id, tokens_used, now_ms)?;
     if let Some(breach) = breach {
         // The watchdog already interrupted the turn; the partial spend
@@ -426,10 +491,18 @@ pub fn drive_agent_turn(
         .get(&agent_id)
         .copied()
         .unwrap_or(0);
-    if policy.over(policy.per_turn_tokens_max, tokens_used)
+    let over = policy.over(policy.per_turn_tokens_max, tokens_used)
         || policy.over(policy.per_task_tokens_max, task_total)
         || policy.over(policy.per_agent_tokens_max, agent_total)
-    {
+        || goal_id
+            .map(|goal_id| {
+                policy.over(
+                    effective_goal_cap(coordinator, goal_id, policy),
+                    goal_spend(coordinator, goal_id),
+                )
+            })
+            .unwrap_or(false);
+    if over {
         fail_budget(coordinator, task_id, now_ms)?;
         return Ok(TurnReport {
             agent: agent_id,

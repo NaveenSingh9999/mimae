@@ -139,6 +139,9 @@ impl<H: HostHooks> Mimae<H> {
         let mut pairs: Vec<(AgentId, Box<dyn AgentAdapter>)> =
             std::mem::take(&mut self.adapters).into_iter().collect();
         pairs.sort_by_key(|(id, _)| id.get());
+        // Restore adapters on error too: a failed drive must not silently
+        // drop live CLI sessions (process adapters kill their child on
+        // Drop) or leave the host unable to drive again.
         let report = drive_goal(
             &mut self.coordinator,
             &mut pairs,
@@ -147,9 +150,9 @@ impl<H: HostHooks> Mimae<H> {
             ttl_ms,
             max_rounds,
             policy,
-        )?;
+        );
         self.adapters = pairs.into_iter().collect();
-        Ok(report)
+        report
     }
 
     pub fn open_gate(&mut self, gate: Gate, at_ms: u64) -> Result<Event, VerifyError> {
