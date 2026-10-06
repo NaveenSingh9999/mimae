@@ -144,3 +144,12 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - `CostPolicy{per_turn/per_task/per_agent_tokens_max}` (`unlimited()` default): pre-turn agent skip (no claim, `budget_breached`), pre-turn task fail without burning a turn, post-turn fail on any breach — always `Failed` with reason `budget-exceeded`, spend recorded first. Threaded through `drive_goal`, `drive_head` (`HeadConfig.cost_policy`), host `drive_with_policy` (`drive` unchanged). Soft `token_budget_per_agent` skip kept (different action).
 - `FailureKind::RunawayCost` (Specification) tags exactly the kill-switch reason. New eval scenario `driven-budget` with gate (1 failed / 1 spec / 1 verification). Mid-turn token kill stays timeout-based (D19) — documented.
 - 152/152 green (8 new), clippy -D warnings + fmt clean, node conformance + sample re-verified. Committed `e0d6166`.
+
+## Usage streaming + mid-turn watchdog (D26)
+
+- `UsageSampled{agent, task?, elapsed_ms, tokens_so_far}` events: the ADE usage stream, readable via `events_since` polling (daemon/binding/hosts alike).
+- `TurnControl: Send + Sync` + `AgentAdapter::control_handle()` (default `NoControl`): out-of-band sample/interrupt sharing state with the running turn through atomics. `AgentAdapter` gained a `Send` supertrait (all impls already Send).
+- `CostPolicy` gains `sample_every_ms` + `turn_wall_max_ms`: monitored turns run on a scoped worker thread (joined before return, `run_bounded_turn` discipline) with interrupt on sampled per-turn breach (`budget-exceeded`) or wall expiry (`turn-timeout`, plain failure). Unlimited policy stays single-threaded, zero new events.
+- Key bug caught by tests: Mutex-around-adapter deadlocks the ticker for the whole turn — fixed via the split control plane before committing.
+- Real CLI adapters keep `NoControl` (D19 timeouts still bound them); ADE-owned adapters implement real handles. 3 watchdog tests, ran 3x stable.
+- 155/155 green, clippy -D warnings + fmt clean, node + sample re-verified (sample now streams 22 events: 20 + 2 CostRecorded). Committed `d206be2`.

@@ -50,3 +50,8 @@
 
 - Durable spend ledger + hard caps with fail-closed breach semantics; eval tags runaway cost. Mid-turn kill remains timeout-based (documented limitation).
 - 152/152 green, clippy/fmt clean. Committed `e0d6166`.
+
+## Usage streaming + mid-turn watchdog (D26)
+
+- Per-tick `UsageSampled` events ADEs subscribe to; scoped-thread watchdog interrupts runaway turns mid-flight (budget or wall-clock). Unlimited policy unchanged (single-threaded).
+- 155/155 green, clippy/fmt clean. Committed `d206be2`.
