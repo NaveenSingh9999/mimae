@@ -1,85 +1,117 @@
 # Mimae
 
-Mimae is a backend coordination layer that ADE builders embed to let many
-agentic coding CLIs work on one project as a self-organizing team. See
-`mimae-concept.md` for the full concept brief and `DECISIONS.md` for the
-decision log.
+Mimae is a Rust library that lets several agent coding CLIs (OpenCode,
+Claude Code, Codex, Antigravity, Qwen, Mimo) work on one repo as a team.
+They claim tasks, hold leases, negotiate through contracts, run checks,
+and report back to a head agent. No human router in the middle, no MCP.
 
-Run the live orchestration example:
+## What you get
 
-    cargo run --example e2e_opencode
+- Deterministic core: scheduling, leases, routing, and cost limits are
+  pure logic. Nothing here calls a model.
+- An append-only event log as the one source of truth. Reopen the same
+  file and it replays.
+- A Neumann-style coordination loop: goal in, task tree out, agents
+  assigned by capability, drive loop runs turns, gates verify, head
+  decides what is next.
+- Three ways to integrate:
+  1. **Rust crate** — `mimae-core`, embedded directly.
+  2. **Local daemon** — `mimae-daemon`, loopback JSON-RPC for
+     Electron/Tauri/editor plugins/scripts.
+  3. **Node binding** — `bindings/node` (napi-rs).
 
-It spins up a local opencode serve, registers one worker, creates one task,
-claims it, runs a turn via the OpenCode adapter, and appends the full
-lifecycle to a temp event log under `${TMPDIR}/mimae-e2e-*`.
+## Quick start
 
-## Embedding
+```sh
+cargo test --workspace                  # runs the whole suite
+cargo run --example sample_ade          # offline walkthrough, no CLIs needed
+cargo run --example e2e_opencode        # live run against a local opencode
+cargo run --bin mimae-daemon -- --port 7777 --log /tmp/run.log
+```
 
-Three surfaces, in order of preference:
+## Building your own integration
 
-1. **Rust library / agentic framework** (primary). Add `mimae-core` as a
-   dependency and embed the `Mimae` facade: `Mimae::open(path)` owns the
-   `Coordinator`, `Mimae::register_agent` attaches one `AgentAdapter` per
-   session, `submit_goal` runs deterministic planning, `drive` runs the
-   head loop, and `poll_approvals` / `drain_notifications` / `drain_events`
-   surface gates, escalations, and the event stream to your UI. Implement
-   `HostHooks` (`on_approval`, `on_escalation`, `on_event`) for the human
-   callbacks in §9.9; the default `NoHooks` approves everything. Raw
-   `Coordinator` access remains available for custom orchestration. All
-   coordination state lives in the append-only log at `path`; reopening the
-   same path replays it exactly. No global state: multiple `Mimae`
-   instances coexist in one process.
-2. **Local daemon.** `cargo run --bin mimae-daemon -- --port <port> --log <path>`
-   serves newline-delimited JSON-RPC 2.0 on loopback TCP for non-Rust hosts
-   (Electron, Tauri, editor plugins, scripts). Every request is one JSON
-   object per line; every reply carries the same `id`.
-3. **Language bindings**: `bindings/node` ships the first one (napi-rs,
-   JSON-string surface over `Coordinator`; `npm test` runs a full
-   coordination loop from JS). Python is next, after the daemon.
-   `examples/sample_ade.rs` (`cargo run --example sample_ade`) is the
-   minimal Rust host: open, register agents, team lifecycle, submit goal,
-   drive, human-gate approval via hooks, event subscription.
+Pick one of the two paths that fits your workflow:
 
-### Daemon protocol
+- **AI-driven build** — paste `BUILD_PROMPT.md` into your coding AI.
+  It has the whole architecture, protocol, invariants, and acceptance
+  criteria.
+- **Manual build** — follow `SETUP.md` step by step.
 
-`mimae.hello` returns `{"protocol": 1, "version": "..."}` — check `protocol`
-before anything else; the number only moves on breaking wire changes.
-Every connection must then call `mimae.negotiate` before any other method:
-the server enforces exact-match negotiation (v1; tolerance for newer minor
-versions may come later) and answers `-32002` until negotiation succeeds.
-`EventPayload` values unknown to the reader are preserved verbatim, so old
-readers replay newer logs without data loss.
+Both land at the same place: a working crate, a passing test suite, a
+daemon you can talk to, and a Node binding if you need JS embedding.
 
-| Method | Params | Result |
+## Minimal Rust embedding
+
+```rust
+let mut host = Mimae::open("run.log")?.with_hooks(MyHooks);
+host.register_agent(agent, adapter, at)?;  // one adapter per session
+host.create_team(team, at)?;               // team comes first
+host.mark_ready(agent_id, at)?;
+host.submit_goal(goal, tasks, contracts, at)?;
+let report = host.drive(goal_id, now, ttl, max_rounds)?;
+let events    = host.drain_events(since_seq)?;
+let approvals = host.poll_approvals(at)?;
+let notes     = host.drain_notifications();
+```
+
+## Daemon protocol
+
+`mimae.hello` → `{protocol, version}` → `mimae.negotiate{protocol,client}`
+(mismatch ⇒ `-32001`; any other call before negotiate ⇒ `-32002`), then
+any of:
+
+| Method | Key params | Result |
 |---|---|---|
-| `mimae.hello` | — | `{protocol, version}` |
-| `mimae.negotiate` | `protocol`, `client` | `{protocol, compatible, server, client}` or `-32001` |
 | `mimae.publish` | `actor`, `payload`, `causes`, `at_ms` | appended `Event` |
 | `mimae.claim` | `task_id`, `agent_id`, `scope`, `now_ms`, `ttl_ms` | `Lease` |
-| `mimae.ready_tasks` | — | `[task_id]` in deterministic order |
-| `mimae.task` | `id` | `Task` or `null` |
-| `mimae.team_state` | — | `"initializing"` \| `"ready"` \| … or `null` |
+| `mimae.ready_tasks` | — | `[task_id]` sorted |
+| `mimae.task` | `id` | `Task` or null |
+| `mimae.team_state` | — | state or null |
 | `mimae.sweep_expired` | `now_ms` | `[[task_id, agent_id]]` released |
-| `mimae.events_since` | `seq` | `[Event]` with seq greater than given |
+| `mimae.events_since` | `seq` | `[Event]` after that seq |
 | `mimae.plan_goal` | `goal`, `tasks`, `contracts`, `at_ms` | `PlanReceipt` |
 | `mimae.assign` | `agent_id`, `now_ms`, `ttl_ms` | `{task_id, lease}` |
-| `mimae.next_assignment` | `agent_id` | `task_id` or `null` |
+| `mimae.next_assignment` | `agent_id` | `task_id` or null |
 | `mimae.goal_progress` | `goal_id` | `{total, done, failed}` |
 | `mimae.open_gate` | `gate`, `at_ms` | appended `Event` |
 | `mimae.decide_gate` | `gate_id`, `passed`, `detail`, `at_ms` | appended `Event` |
-| `mimae.verification_status` | `task_id` | `"verified"` \| `"unverified"` \| `"failed"` |
+| `mimae.verification_status` | `task_id` | `verified|unverified|failed` |
 | `mimae.record_artifact` | `artifact`, `at_ms` | appended `Event` |
 | `mimae.propose_contract` | `contract`, `at_ms` | appended `Event` |
 
-Errors follow JSON-RPC 2.0: `-32601` unknown method, `-32602` bad params,
-`-32700` malformed line, `-32001` protocol mismatch, `-32002` call before
-negotiation, `-32000` coordinator rejection (the log is never
-mutated on rejection). Poll `mimae.events_since` with the last seen `seq`
-to subscribe; Mimae never pushes UI — the host renders.
+Errors: `-32601` unknown, `-32602` bad params, `-32700` malformed line,
+`-32001` protocol mismatch, `-32002` call before negotiate,
+`-32000` coordinator rejected the event (the log is unchanged on rejection).
 
-### Host responsibilities
+Poll `mimae.events_since` with the last `seq` you saw; Mimae never pushes
+UI — your host renders. New event variants must be additive; old readers
+round-trip unknown payloads verbatim.
 
-The host spawns CLI sessions (one adapter per session), supplies the working
-directory and role brief, answers approval gates and escalations, and provides
-any test/oracle commands for verification gates. Mimae owns scheduling,
-leases, routing, contracts, and git workspace operations.
+## What the host must provide
+
+- Running CLI sessions (one `AgentAdapter` per session), the cwd, and the
+  role brief.
+- An answer for approval gates (`HostHooks::on_approval`) and an escalation
+  sink (`on_escalation`).
+- The command lines for `Tests`/`Oracle` gates, and which git worktree
+  layout you want (see `WorkspaceManager`).
+- Exactly one writer per log file on Windows today (the single-writer lock
+  is a unix flock; Windows is a documented stub — see `DECISIONS.md` D27).
+
+## Where everything is
+
+| Topic | File |
+|---|---|
+| Concept / requirements | `mimae-concept.md` |
+| Decisions D1–D27 | `DECISIONS.md` |
+| Manual setup steps | `SETUP.md` |
+| AI build spec | `BUILD_PROMPT.md` |
+| Core crate | `src/` |
+| Node binding | `bindings/node/` |
+| Executable | `src/bin/mimae-daemon.rs` |
+| Examples | `examples/` |
+
+## License
+
+MIT OR Apache-2.0.
