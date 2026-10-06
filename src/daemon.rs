@@ -1,10 +1,10 @@
 use crate::actor::Actor;
-use crate::coordinator::Coordinator;
 use crate::entities::{Artifact, Gate, Goal, WriteScope};
 use crate::event::{EventPayload, PROTOCOL_VERSION};
 use crate::ids::{AgentId, GateId, GoalId, TaskId};
 use crate::planner::{PlanContract, PlanTask};
 use crate::verify::VerificationStatus;
+use crate::{MIMAE_VERSION, coordinator::Coordinator};
 use serde::de::DeserializeOwned;
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
@@ -62,7 +62,7 @@ fn dispatch(
     match method {
         "mimae.hello" => Ok(serde_json::json!({
             "protocol": PROTOCOL_VERSION,
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": MIMAE_VERSION,
         })),
         "mimae.negotiate" => {
             let client_protocol: u32 = param(params, "protocol").map_err(|e| (-32602, e))?;
@@ -71,7 +71,7 @@ fn dispatch(
                 Ok(serde_json::json!({
                     "protocol": PROTOCOL_VERSION,
                     "compatible": true,
-                    "server": format!("mimae-core {}", env!("CARGO_PKG_VERSION")),
+                    "server": format!("mimae-core {MIMAE_VERSION}"),
                     "client": client,
                 }))
             } else {

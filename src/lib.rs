@@ -1,5 +1,10 @@
 #![deny(unsafe_code)]
 
+/// Runtime version stamped at build time by `build.rs`:
+/// `git describe --tags --always --dirty`, falling back to
+/// `MIMAE_VERSION` env at release build, then `unknown`.
+pub const MIMAE_VERSION: &str = env!("MIMAE_VERSION");
+
 pub mod actor;
 pub mod adapter;
 pub mod antigravity;
