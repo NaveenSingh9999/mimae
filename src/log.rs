@@ -116,6 +116,11 @@ fn try_lock(file: &File) -> Result<bool, io::Error> {
     }
 }
 
+// TODO(win): no real single-writer lock yet. std's File::try_lock() is not
+// implementable here (returns Unsupported on this kernel), and this stub
+// means two writers on Windows could interleave. Enforce "one mimae-daemon
+// per log path" at the host for now; proper LockFileEx-based locking is a
+// follow-up when a Windows host matters.
 #[cfg(not(unix))]
 fn try_lock(_file: &File) -> Result<bool, io::Error> {
     Ok(true)
