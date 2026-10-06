@@ -153,3 +153,10 @@ ACP schema, gate4agent/fno-agents/fux adapters, Claude Code Agent Teams, Cursor 
 - Key bug caught by tests: Mutex-around-adapter deadlocks the ticker for the whole turn — fixed via the split control plane before committing.
 - Real CLI adapters keep `NoControl` (D19 timeouts still bound them); ADE-owned adapters implement real handles. 3 watchdog tests, ran 3x stable.
 - 155/155 green, clippy -D warnings + fmt clean, node + sample re-verified (sample now streams 22 events: 20 + 2 CostRecorded). Committed `d206be2`.
+
+## Review pass (D27)
+
+- **Found + fixed (real bugs)**: (a) `Mimae::drive`/`drive_with_policy` dropped `self.adapters` on `drive_goal` error — live CLI sessions killed by a transient error (pre-existing since D21, carried into D25); now restored on error. (b) §9.8 runaway-cost requires per-agent AND per-goal budgets — per-goal cap was missing; added `CostPolicy.per_goal_tokens_max` with fallback to the goal's own `Budget::max_tokens` (non-zero), enforced pre-turn (no burn) and post-turn (fail closed).
+- **Checked, no issue**: zero `unwrap`/`expect`/`panic!` in src; `unsafe` confined to the flock wrapper with crate-level `#![deny(unsafe_code)]`; no detached threads (watchdog scope-joins; daemon accept threads end on client EOF — idle-timeout noted as future); events_since UsageSampled ticks are caller-clock `now_ms` + real `elapsed_ms` (documented convention).
+- **Deliberate divergence**: md §9.8 response for runaway cost is "pause and escalate"; we fail closed (task Failed + Set RunawayCost) — recorded in D27.
+- 156/156 green (per-goal test added), clippy -D warnings + fmt clean, node + sample re-verified. Committed `e1aa43a`.

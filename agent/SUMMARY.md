@@ -55,3 +55,8 @@
 
 - Per-tick `UsageSampled` events ADEs subscribe to; scoped-thread watchdog interrupts runaway turns mid-flight (budget or wall-clock). Unlimited policy unchanged (single-threaded).
 - 155/155 green, clippy/fmt clean. Committed `d206be2`.
+
+## Review pass (D27)
+
+- Fixed adapter-drop-on-drive-error and added the missing per-goal budget leg (§9.8). Everything else checked clean (no leaks, no panic paths, threads scoped).
+- 156/156 green, clippy/fmt clean. Committed `e1aa43a`.
