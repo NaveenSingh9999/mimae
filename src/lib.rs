@@ -27,8 +27,8 @@ pub mod workspace;
 
 pub use actor::Actor;
 pub use adapter::{
-    AdapterCapabilities, AgentAdapter, SessionEvent, SessionReply, TransportMode, TurnOutcome,
-    run_bounded_turn,
+    AdapterCapabilities, AgentAdapter, NoControl, SessionEvent, SessionReply, TransportMode,
+    TurnControl, TurnOutcome, run_bounded_turn,
 };
 pub use antigravity::{AntigravityAdapter, parse_agy_stream_line};
 pub use claude::ClaudeAdapter;
@@ -37,7 +37,7 @@ pub use coordinator::{Coordinator, CoreError};
 pub use daemon::{handle_request, serve};
 pub use drive::{
     BUDGET_EXCEEDED_REASON, CostPolicy, DriveError, DriveReport, HeadConfig, HeadReport,
-    TurnReport, drive_agent_turn, drive_goal, drive_head,
+    TURN_TIMEOUT_REASON, TurnReport, drive_agent_turn, drive_goal, drive_head,
 };
 pub use entities::*;
 pub use eval::{

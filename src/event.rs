@@ -118,6 +118,12 @@ pub enum KnownPayload {
         input_tokens: u64,
         output_tokens: u64,
     },
+    UsageSampled {
+        agent_id: AgentId,
+        task_id: Option<TaskId>,
+        elapsed_ms: u64,
+        tokens_so_far: Option<u64>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,6 +164,7 @@ fn is_known_kind(kind: &str) -> bool {
             | "gate_opened"
             | "gate_decided"
             | "cost_recorded"
+            | "usage_sampled"
     )
 }
 

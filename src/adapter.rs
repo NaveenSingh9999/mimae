@@ -66,7 +66,7 @@ pub enum SessionReply {
     Failed { error: String },
 }
 
-pub trait AgentAdapter {
+pub trait AgentAdapter: Send {
     fn capabilities(&self) -> AdapterCapabilities;
     fn start_session(
         &mut self,
@@ -82,7 +82,40 @@ pub trait AgentAdapter {
     fn timeout(&self) -> Option<Duration> {
         None
     }
+    /// Out-of-band control plane for the in-flight turn. The drive watchdog
+    /// calls this on its sample thread while `send_turn` runs on the worker
+    /// thread, so the handle must share state with the running turn through
+    /// interior mutability (typically `Arc`/`Atomic`). Defaults to
+    /// [`NoControl`] (wall-clock observation only, `interrupt()` no-op).
+    /// Adapters that can see live spend and kill hung work — process
+    /// supervisors, counting proxies, ADE-owned sessions — return a real
+    /// handle; that is what upgrades the watchdog from observer to killer.
+    fn control_handle(&self) -> Box<dyn TurnControl> {
+        Box::new(NoControl)
+    }
 }
+
+/// Out-of-band control plane for a running turn. Called from the watchdog
+/// thread while `send_turn` runs elsewhere: implementations must be
+/// lock-free-ish (never block the sample loop) and share state with the
+/// turn through atomics or short-lived locks.
+pub trait TurnControl: Send + Sync {
+    /// Running token total for the in-flight turn, if visible.
+    fn sample_usage(&self) -> Option<u64> {
+        None
+    }
+    /// Ask the running turn to stop. Cooperative except where the handle
+    /// owns a killable resource (child process, cancel token).
+    fn interrupt(&self) -> bool {
+        false
+    }
+}
+
+/// Default control plane: observes nothing, stops nothing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoControl;
+
+impl TurnControl for NoControl {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TurnOutcome {

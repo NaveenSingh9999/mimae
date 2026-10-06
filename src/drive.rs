@@ -60,6 +60,10 @@ impl Default for HeadConfig {
 /// enforcement. The eval harness tags exactly this reason as runaway cost.
 pub const BUDGET_EXCEEDED_REASON: &str = "budget-exceeded";
 
+/// Reason recorded when the mid-turn watchdog interrupts a turn that ran
+/// past `turn_wall_max_ms`. Counted as a plain task failure (no MAST tag).
+pub const TURN_TIMEOUT_REASON: &str = "turn-timeout";
+
 /// Hard token-spend caps enforced by [`drive_agent_turn`]. Any cap set to
 /// `None` is not enforced. All spend is read from the folded log
 /// (`TaskGraph::cost_by_agent` / `cost_by_task`), so caps hold across
@@ -74,6 +78,21 @@ pub struct CostPolicy {
     /// Max cumulative tokens charged to one agent. An over-budget agent is
     /// skipped before claiming; a turn that pushes it over fails its task.
     pub per_agent_tokens_max: Option<u64>,
+    /// Mid-turn sample cadence in milliseconds. When set, the turn runs on
+    /// a scoped worker thread while the drive loop samples
+    /// [`AgentAdapter::sample_usage`] every tick, publishes a
+    /// `UsageSampled` event per tick (the ADE usage stream — subscribe via
+    /// `events_since`), and interrupts the turn when the sampled total
+    /// breaches `per_turn_tokens_max`. `None` (default) keeps turns
+    /// single-threaded with post-turn accounting only.
+    pub sample_every_ms: Option<u64>,
+    /// Mid-turn wall-clock cap in milliseconds. A turn running past it is
+    /// interrupted and failed with [`TURN_TIMEOUT_REASON`]. Requires the
+    /// sample loop, so it only applies when `sample_every_ms` is set.
+    /// `interrupt()` is cooperative except for process adapters (which
+    /// kill the child, D19): an adapter that ignores it fails only once
+    /// `send_turn` returns.
+    pub turn_wall_max_ms: Option<u64>,
 }
 
 impl CostPolicy {
@@ -82,12 +101,27 @@ impl CostPolicy {
             per_turn_tokens_max: None,
             per_task_tokens_max: None,
             per_agent_tokens_max: None,
+            sample_every_ms: None,
+            turn_wall_max_ms: None,
         }
     }
 
     fn over(&self, cap: Option<u64>, spent: u64) -> bool {
         cap.is_some_and(|max| spent > max)
     }
+
+    fn monitored(&self) -> bool {
+        self.sample_every_ms.is_some() || self.turn_wall_max_ms.is_some()
+    }
+}
+
+/// How a monitored turn ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TurnBreach {
+    /// Sampled usage passed the per-turn cap; interrupted mid-flight.
+    Budget,
+    /// Wall clock passed `turn_wall_max_ms`; interrupted mid-flight.
+    Timeout,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,13 +159,22 @@ fn fail_budget(
     task_id: TaskId,
     at_ms: u64,
 ) -> Result<(), DriveError> {
+    fail_task(coordinator, task_id, Some(BUDGET_EXCEEDED_REASON), at_ms)
+}
+
+fn fail_task(
+    coordinator: &mut Coordinator,
+    task_id: TaskId,
+    reason: Option<&str>,
+    at_ms: u64,
+) -> Result<(), DriveError> {
     coordinator.publish(
         Actor::Coordinator,
         EventPayload::Known(KnownPayload::TaskStatusChanged {
             task_id,
             from: TaskStatus::Claimed,
             to: TaskStatus::Failed,
-            reason: Some(BUDGET_EXCEEDED_REASON.to_string()),
+            reason: reason.map(str::to_string),
         }),
         vec![],
         at_ms,
@@ -162,10 +205,105 @@ fn record_cost(
     Ok(())
 }
 
+fn elapsed_ms(started: std::time::Instant) -> u64 {
+    started.elapsed().as_millis().min(u64::MAX as u128) as u64
+}
+
+/// Run one turn, optionally watched. With monitoring enabled the turn runs
+/// on a scoped worker thread (joined before return — never detached, same
+/// discipline as `run_bounded_turn`) while this thread samples usage every
+/// tick, publishes `UsageSampled` events for ADE subscribers, and calls
+/// `interrupt()` on budget breach or wall-clock expiry. A panicking adapter
+/// fails the turn instead of the drive loop.
+#[allow(clippy::too_many_arguments)]
+fn run_monitored_turn(
+    coordinator: &mut Coordinator,
+    adapter: &mut (dyn AgentAdapter + Send),
+    agent_id: AgentId,
+    task_id: TaskId,
+    brief: &str,
+    now_ms: u64,
+    policy: &CostPolicy,
+) -> Result<(Vec<SessionEvent>, Option<TurnBreach>), DriveError> {
+    if !policy.monitored() {
+        return Ok((adapter.send_turn(brief), None));
+    }
+    let tick_ms = policy.sample_every_ms.unwrap_or(u64::MAX).max(1);
+    let started = std::time::Instant::now();
+    // The control plane is a separate object sharing state with the turn
+    // through atomics: the worker owns `send_turn`, the ticker owns the
+    // handle, and no mutex ever spans the blocking call (a Mutex around the
+    // adapter would deadlock the ticker for the whole turn).
+    let control = adapter.control_handle();
+    let mut breach = None;
+    let events = std::thread::scope(|s| {
+        let worker = s.spawn(|| adapter.send_turn(brief));
+        let mut next_sample_ms = tick_ms;
+        loop {
+            if worker.is_finished() {
+                break;
+            }
+            // Wake for the next sample, the wall deadline, or a finish
+            // check — whichever comes first (50ms slices at most).
+            let mut wait_ms = 50u64;
+            if policy.sample_every_ms.is_some() {
+                wait_ms = wait_ms.min(next_sample_ms.saturating_sub(elapsed_ms(started)));
+            }
+            if let Some(max) = policy.turn_wall_max_ms {
+                wait_ms = wait_ms.min(max.saturating_sub(elapsed_ms(started)));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(wait_ms.max(1)));
+            if worker.is_finished() {
+                break;
+            }
+            let at_elapsed_ms = elapsed_ms(started);
+            if policy.sample_every_ms.is_some() && at_elapsed_ms >= next_sample_ms {
+                next_sample_ms = at_elapsed_ms.saturating_add(tick_ms);
+                // A turn that finished between the two checks yields at most
+                // one extra sample; interrupting it is a harmless no-op.
+                let sampled = control.sample_usage();
+                coordinator.publish(
+                    Actor::Coordinator,
+                    EventPayload::Known(KnownPayload::UsageSampled {
+                        agent_id,
+                        task_id: Some(task_id),
+                        elapsed_ms: at_elapsed_ms,
+                        tokens_so_far: sampled,
+                    }),
+                    vec![],
+                    now_ms,
+                )?;
+                if sampled.is_some_and(|total| policy.over(policy.per_turn_tokens_max, total)) {
+                    control.interrupt();
+                    breach = Some(TurnBreach::Budget);
+                    break;
+                }
+            }
+            if policy
+                .turn_wall_max_ms
+                .is_some_and(|max| at_elapsed_ms > max)
+            {
+                control.interrupt();
+                breach = Some(TurnBreach::Timeout);
+                break;
+            }
+        }
+        Ok::<_, DriveError>(worker.join().unwrap_or_else(|_| {
+            vec![
+                SessionEvent::Error {
+                    message: "adapter turn panicked".into(),
+                },
+                SessionEvent::TurnComplete { ok: false },
+            ]
+        }))
+    })?;
+    Ok((events, breach))
+}
+
 pub fn drive_agent_turn(
     coordinator: &mut Coordinator,
     agent_id: AgentId,
-    adapter: &mut dyn AgentAdapter,
+    adapter: &mut (dyn AgentAdapter + Send),
     now_ms: u64,
     ttl_ms: u64,
     policy: &CostPolicy,
@@ -230,7 +368,15 @@ pub fn drive_agent_turn(
         .get(&task_id)
         .map(|task| task.brief.clone())
         .unwrap_or_default();
-    let events = adapter.send_turn(&brief);
+    let (events, breach) = run_monitored_turn(
+        coordinator,
+        adapter,
+        agent_id,
+        task_id,
+        &brief,
+        now_ms,
+        policy,
+    )?;
     let mut tokens_used = 0u64;
     let mut turn_ok = false;
     for event in &events {
@@ -246,10 +392,28 @@ pub fn drive_agent_turn(
             _ => {}
         }
     }
-    // NOTE: mid-turn kill is timeout-based (run_bounded_turn, D19).
-    // Token-based mid-turn kill needs usage streaming the CLIs do not
-    // provide; the per-turn cap below is the post-turn backstop.
+    // NOTE: token-based mid-turn kill needs usage streaming the CLIs do not
+    // provide; adapters that implement sample_usage get it via the sample
+    // loop above, the per-turn cap below is the post-turn backstop for all.
     record_cost(coordinator, agent_id, task_id, tokens_used, now_ms)?;
+    if let Some(breach) = breach {
+        // The watchdog already interrupted the turn; the partial spend
+        // above stays recorded and the task fails with the matching reason.
+        match breach {
+            TurnBreach::Budget => fail_budget(coordinator, task_id, now_ms)?,
+            TurnBreach::Timeout => {
+                fail_task(coordinator, task_id, Some(TURN_TIMEOUT_REASON), now_ms)?
+            }
+        }
+        return Ok(TurnReport {
+            agent: agent_id,
+            assigned: Some(task_id),
+            turn_ok: false,
+            completed: false,
+            tokens_used,
+            budget_breached: breach == TurnBreach::Budget,
+        });
+    }
     let task_total = coordinator
         .graph()
         .cost_by_task

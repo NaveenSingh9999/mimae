@@ -676,3 +676,290 @@ fn drive_head_honors_cost_policy() {
     );
     drop(coord);
 }
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+/// Adapter whose turns take real wall time and honor `interrupt()`.
+struct SleepAdapter {
+    interrupted: Arc<AtomicBool>,
+    sleep_ms: u64,
+}
+
+struct SleepControl {
+    interrupted: Arc<AtomicBool>,
+}
+
+impl TurnControl for SleepControl {
+    fn interrupt(&self) -> bool {
+        self.interrupted.store(true, Ordering::SeqCst);
+        true
+    }
+}
+
+impl AgentAdapter for SleepAdapter {
+    fn capabilities(&self) -> AdapterCapabilities {
+        AdapterCapabilities {
+            cli_name: "sleep".into(),
+            preferred_mode: TransportMode::HeadlessJson,
+            modes: vec![TransportMode::HeadlessJson],
+            can_interrupt: true,
+            can_resume: true,
+            can_inject_context: true,
+            supports_hooks: false,
+            declared_capabilities: vec![Capability::new("backend")],
+        }
+    }
+
+    fn start_session(&mut self, _: &str, _: &str, _: Option<&str>) -> SessionReply {
+        SessionReply::Started
+    }
+
+    fn send_turn(&mut self, _: &str) -> Vec<SessionEvent> {
+        let mut waited = 0u64;
+        while waited < self.sleep_ms {
+            if self.interrupted.load(Ordering::SeqCst) {
+                return vec![SessionEvent::TurnComplete { ok: false }];
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            waited += 10;
+        }
+        vec![
+            SessionEvent::Ok {
+                payload: "slowly done".into(),
+            },
+            SessionEvent::TurnComplete { ok: true },
+        ]
+    }
+
+    fn interrupt(&mut self) -> bool {
+        self.interrupted.store(true, Ordering::SeqCst);
+        true
+    }
+
+    fn resume(&mut self, _: &str) -> SessionReply {
+        SessionReply::Started
+    }
+
+    fn inject_context(&mut self, _: &str) -> bool {
+        true
+    }
+
+    fn liveness(&self) -> AgentState {
+        AgentState::Working
+    }
+
+    fn control_handle(&self) -> Box<dyn TurnControl> {
+        Box::new(SleepControl {
+            interrupted: Arc::clone(&self.interrupted),
+        })
+    }
+}
+
+/// Adapter whose sampled usage rises 100 tokens per poll while its turn
+/// runs 200ms — a runaway the sample loop must catch mid-flight.
+struct RisingAdapter {
+    interrupted: Arc<AtomicBool>,
+    sampled: Arc<Mutex<u64>>,
+}
+
+struct RisingControl {
+    interrupted: Arc<AtomicBool>,
+    sampled: Arc<Mutex<u64>>,
+}
+
+impl TurnControl for RisingControl {
+    fn sample_usage(&self) -> Option<u64> {
+        let mut total = self.sampled.lock().unwrap();
+        *total = total.saturating_add(100);
+        Some(*total)
+    }
+
+    fn interrupt(&self) -> bool {
+        self.interrupted.store(true, Ordering::SeqCst);
+        true
+    }
+}
+
+impl AgentAdapter for RisingAdapter {
+    fn capabilities(&self) -> AdapterCapabilities {
+        AdapterCapabilities {
+            cli_name: "rising".into(),
+            preferred_mode: TransportMode::HeadlessJson,
+            modes: vec![TransportMode::HeadlessJson],
+            can_interrupt: true,
+            can_resume: true,
+            can_inject_context: true,
+            supports_hooks: false,
+            declared_capabilities: vec![Capability::new("backend")],
+        }
+    }
+
+    fn start_session(&mut self, _: &str, _: &str, _: Option<&str>) -> SessionReply {
+        SessionReply::Started
+    }
+
+    fn send_turn(&mut self, _: &str) -> Vec<SessionEvent> {
+        for _ in 0..40 {
+            if self.interrupted.load(Ordering::SeqCst) {
+                return vec![SessionEvent::TurnComplete { ok: false }];
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        vec![
+            SessionEvent::Ok {
+                payload: "done".into(),
+            },
+            SessionEvent::TurnComplete { ok: true },
+        ]
+    }
+
+    fn interrupt(&mut self) -> bool {
+        self.interrupted.store(true, Ordering::SeqCst);
+        true
+    }
+
+    fn resume(&mut self, _: &str) -> SessionReply {
+        SessionReply::Started
+    }
+
+    fn inject_context(&mut self, _: &str) -> bool {
+        true
+    }
+
+    fn liveness(&self) -> AgentState {
+        AgentState::Working
+    }
+
+    fn control_handle(&self) -> Box<dyn TurnControl> {
+        Box::new(RisingControl {
+            interrupted: Arc::clone(&self.interrupted),
+            sampled: Arc::clone(&self.sampled),
+        })
+    }
+}
+
+fn usage_samples(coord: &Coordinator, task: u64) -> Vec<(u64, Option<u64>)> {
+    coord
+        .events_since(0)
+        .unwrap()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            EventPayload::Known(KnownPayload::UsageSampled {
+                task_id,
+                elapsed_ms,
+                tokens_so_far,
+                ..
+            }) if *task_id == Some(TaskId::new(task)) => Some((*elapsed_ms, *tokens_so_far)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn drive_watchdog_times_out_stuck_turn() {
+    let mut coord = setup("watch-timeout", &[1]);
+    plan_two_tasks(&mut coord);
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(SleepAdapter {
+        interrupted: Arc::new(AtomicBool::new(false)),
+        sleep_ms: 300,
+    });
+    let policy = CostPolicy {
+        sample_every_ms: Some(5),
+        turn_wall_max_ms: Some(50),
+        ..CostPolicy::unlimited()
+    };
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &policy,
+    )
+    .unwrap();
+    // The 300ms turn died at the 50ms wall: failed with the timeout reason
+    // (not the budget one), after streaming samples to the log.
+    assert!(!reported.turn_ok);
+    assert!(!reported.budget_breached);
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Failed
+    );
+    assert_eq!(
+        failed_reason(&coord, 1).as_deref(),
+        Some(TURN_TIMEOUT_REASON)
+    );
+    let samples = usage_samples(&coord, 1);
+    assert!(!samples.is_empty(), "expected sample ticks in the log");
+    assert!(
+        samples.iter().all(|(elapsed, _)| *elapsed <= 300),
+        "samples carry real elapsed times: {samples:?}"
+    );
+    drop(coord);
+}
+
+#[test]
+fn drive_watchdog_kills_on_sampled_cost() {
+    let mut coord = setup("watch-budget", &[1]);
+    plan_two_tasks(&mut coord);
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(RisingAdapter {
+        interrupted: Arc::new(AtomicBool::new(false)),
+        sampled: Arc::new(Mutex::new(0)),
+    });
+    let policy = CostPolicy {
+        sample_every_ms: Some(5),
+        per_turn_tokens_max: Some(250),
+        turn_wall_max_ms: Some(5_000),
+        ..CostPolicy::unlimited()
+    };
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &policy,
+    )
+    .unwrap();
+    // Sampled usage hit ~300 within ~15ms, long before the 200ms turn or
+    // the 5s wall: interrupted mid-flight as a budget breach.
+    assert!(reported.budget_breached);
+    assert!(!reported.completed);
+    assert_eq!(
+        coord.graph().tasks[&TaskId::new(1)].status,
+        TaskStatus::Failed
+    );
+    assert_eq!(
+        failed_reason(&coord, 1).as_deref(),
+        Some(BUDGET_EXCEEDED_REASON)
+    );
+    assert!(!usage_samples(&coord, 1).is_empty());
+    drop(coord);
+}
+
+#[test]
+fn drive_without_monitoring_streams_no_samples() {
+    let mut coord = setup("watch-off", &[1]);
+    plan_two_tasks(&mut coord);
+    let a1 = ScriptAdapter::default();
+    a1.push(usage_turn(100, 50));
+    let mut adapter: Box<dyn AgentAdapter> = Box::new(a1);
+    let reported = drive_agent_turn(
+        &mut coord,
+        AgentId::new(1),
+        adapter.as_mut(),
+        100,
+        60_000,
+        &CostPolicy::unlimited(),
+    )
+    .unwrap();
+    // Unlimited policy stays single-threaded: cost recorded once at turn
+    // end, no sample ticks in the log.
+    assert!(reported.turn_ok);
+    assert!(usage_samples(&coord, 1).is_empty());
+    assert_eq!(cost_events(&coord), 1);
+    drop(coord);
+}
