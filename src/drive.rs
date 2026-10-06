@@ -84,7 +84,7 @@ pub struct CostPolicy {
     pub per_goal_tokens_max: Option<u64>,
     /// Mid-turn sample cadence in milliseconds. When set, the turn runs on
     /// a scoped worker thread while the drive loop samples
-    /// [`AgentAdapter::sample_usage`] every tick, publishes a
+    /// [`crate::adapter::TurnControl::sample_usage`] every tick, publishes a
     /// `UsageSampled` event per tick (the ADE usage stream — subscribe via
     /// `events_since`), and interrupts the turn when the sampled total
     /// breaches `per_turn_tokens_max`. `None` (default) keeps turns
